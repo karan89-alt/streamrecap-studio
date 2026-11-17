@@ -510,7 +510,7 @@ class AIDirector:
             prompt = self._build_prompt(stream_meta, hype_spikes, target_seconds, story_style)
 
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.8-flash",
                 contents=prompt,
                 config={"response_mime_type": "application/json"}
             )
