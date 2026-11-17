@@ -1,0 +1,16 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+storage/clips/*
+storage/temp/*
+storage/audio/*
+storage/exports/*
+.env
+.git
+.gitignore
+test_*.py

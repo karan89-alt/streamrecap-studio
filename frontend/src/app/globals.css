@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #090a0f;
+  --foreground: #f1f5f9;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom dark studio scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d0f17;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #272e3f;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #38435c;
+}
+
+/* Studio glowing elements */
+.studio-glass {
+  background: rgba(13, 15, 23, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(39, 46, 63, 0.7);
+}
+
+.studio-glass-accent {
+  background: rgba(26, 31, 44, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 70, 85, 0.25);
+}
+
+/* Teleprompter text smooth scroll */
+.teleprompter-text {
+  line-height: 2.2;
+  letter-spacing: 0.02em;
+}
