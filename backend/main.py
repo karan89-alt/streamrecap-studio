@@ -162,10 +162,10 @@ async def process_recap_pipeline(job_id: str, url: str, target_minutes: int, sto
             segments=script_segments
         )
 
-        # Step 3: Fast partial clip downloads (2 concurrent workers to prevent YouTube IP throttling)
+        # Step 3: Fast parallel clip extraction (5 workers on cloud datacenter network)
         total_clips = len(script_segments)
         completed_downloads = 0
-        dl_sem = asyncio.Semaphore(2)
+        dl_sem = asyncio.Semaphore(5)
 
         # Pre-warm direct stream URL once before parallel workers start
         await extractor.get_direct_stream_url(metadata.get("url", url))

@@ -77,7 +77,7 @@ class AIDirector:
         stream_duration = max(120, int(stream_meta.get("duration") or 3000))
         channel = stream_meta.get("channel") or "Gaming Creator"
 
-        avg_segment_duration = 9.0
+        avg_segment_duration = 10.5
         num_segments = max(6, round(target_seconds / avg_segment_duration))
 
         # Partition into 3 acts: 20% Act I, 60% Act II, 20% Act III

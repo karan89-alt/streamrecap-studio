@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shutil
 import subprocess
 import sys
 import time
@@ -22,6 +23,9 @@ HD_FORMAT_SELECTOR = (
     "bestvideo[height<=1080]+bestaudio/"
     "best[height<=1080]/best"
 )
+
+NODE_PATH = shutil.which("node") or shutil.which("nodejs")
+JS_RUNTIME_ARGS = ["--js-runtimes", f"node:{NODE_PATH}"] if NODE_PATH else []
 
 
 class YouTubeExtractor:
@@ -113,6 +117,7 @@ class YouTubeExtractor:
                 str(sys.executable), "-m", "yt_dlp",
                 "-g",
                 "--no-warnings",
+                *JS_RUNTIME_ARGS,
                 "-f", HD_FORMAT_SELECTOR,
                 clean_url
             ]
@@ -238,6 +243,7 @@ class YouTubeExtractor:
                         settings.FFMPEG_PATH,
                         "-y",
                         "-threads", "2",
+                        "-fflags", "+genpts",
                         "-reconnect", "1",
                         "-reconnect_streamed", "1",
                         "-reconnect_delay_max", "5",
@@ -254,6 +260,7 @@ class YouTubeExtractor:
                         "-c:v", "copy",
                         "-c:a", "aac",
                         "-b:a", "128k",
+                        "-shortest",
                         "-avoid_negative_ts", "make_zero",
                         str(out_path)
                     ]

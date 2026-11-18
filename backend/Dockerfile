@@ -1,9 +1,10 @@
 # Production Dockerfile for Railway.app Deployment
 FROM python:3.11-slim
 
-# Install system dependencies including FFmpeg and fonts
+# Install system dependencies including FFmpeg, Node.js (for unthrottled yt-dlp 1080p/4K), and fonts
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    nodejs \
     fonts-dejavu-core \
     fonts-freefont-ttf \
     curl \
