@@ -31,16 +31,23 @@ HD_FORMAT_SELECTOR = (
 
 
 def _get_cookie_args() -> List[str]:
-    """Optional documented yt-dlp --cookies support via YOUTUBE_COOKIES_B64 env var."""
-    b64 = (os.environ.get("YOUTUBE_COOKIES_B64") or "").strip()
-    if not b64:
+    """Optional documented yt-dlp --cookies support via YOUTUBE_COOKIES_B64 env var (base64 or raw Netscape cookies.txt)."""
+    raw_val = (os.environ.get("YOUTUBE_COOKIES_B64") or "").strip()
+    if not raw_val:
         return []
     cookie_file = TEMP_DIR / "yt_cookies.txt"
     try:
-        cookie_file.write_bytes(base64.b64decode(b64))
-        return ["--cookies", str(cookie_file)]
-    except Exception:
-        return []
+        if "# Netscape" in raw_val or "\t" in raw_val:
+            cookie_bytes = raw_val.encode("utf-8")
+        else:
+            cleaned = re.sub(r"\s+", "", raw_val)
+            cookie_bytes = base64.b64decode(cleaned)
+        if len(cookie_bytes) > 50:
+            cookie_file.write_bytes(cookie_bytes)
+            return ["--cookies", str(cookie_file)]
+    except Exception as e:
+        logger.warning(f"Could not parse YOUTUBE_COOKIES_B64: {e}")
+    return []
 
 
 class YouTubeExtractor:
@@ -237,6 +244,16 @@ class YouTubeExtractor:
                 clean_url
             ]
 
+            cmd_hd_cookies_tv = [
+                str(sys.executable), "-m", "yt_dlp",
+                "-g",
+                "--no-warnings",
+                *cookie_args,
+                "--extractor-args", "youtube:player_client=tv,web",
+                "-f", HD_FORMAT_SELECTOR,
+                clean_url
+            ]
+
             def _fetch(cmd: List[str]) -> Optional[Tuple[str, Optional[str]]]:
                 res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=25)
                 if res.returncode == 0 and res.stdout.strip():
@@ -249,7 +266,14 @@ class YouTubeExtractor:
                 logger.warning(self.last_debug)
                 return None
 
-            for label, cmd in [("visionos-1080p", cmd_hd_visionos), ("default-1080p", cmd_hd_default)]:
+            # When user cookies are configured (e.g. Railway), try cookie-compatible clients FIRST!
+            candidates = (
+                [("default-cookies-1080p", cmd_hd_default), ("tv-cookies-1080p", cmd_hd_cookies_tv), ("visionos-1080p", cmd_hd_visionos)]
+                if cookie_args
+                else [("visionos-1080p", cmd_hd_visionos), ("default-1080p", cmd_hd_default)]
+            )
+
+            for label, cmd in candidates:
                 try:
                     pair = await asyncio.to_thread(_fetch, cmd)
                     if pair:

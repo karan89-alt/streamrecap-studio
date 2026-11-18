@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import uuid
 from typing import Dict, Any, List, Optional
 from pathlib import Path
@@ -21,9 +22,9 @@ from config import (
     EXPORTS_DIR,
     TEMP_DIR,
 )
-from services.youtube_extractor import YouTubeExtractor
+from services.youtube_extractor import YouTubeExtractor, _get_cookie_args
 from services.ai_director import AIDirector
-from services.voice_mixer import VoiceMixer, SARVAM_VOICES
+from services.voice_mixer import VoiceMixer, SARVAM_VOICES, IS_CLOUD_LOW_MEM
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("streamrecap.api")
@@ -176,7 +177,7 @@ async def process_recap_pipeline(
 
         total_planned = len(planned_intervals)
         completed_cuts = 0
-        dl_sem = asyncio.Semaphore(4)
+        dl_sem = asyncio.Semaphore(2 if IS_CLOUD_LOW_MEM else 4)
 
         async def _cut_and_snap(interval: Dict[str, Any]):
             nonlocal completed_cuts
@@ -419,9 +420,13 @@ async def process_recap_pipeline(
 async def health_check():
     return {
         "status": "healthy",
-        "version": "4.0.0",
+        "version": "4.0.1",
+        "environment": "railway" if IS_CLOUD_LOW_MEM else "local",
         "vision_engine": "gemini-3.1-flash-lite-preview",
         "tts_engine": "sarvam-bulbul-v3",
+        "gemini_key_configured": bool(settings.GEMINI_API_KEY),
+        "sarvam_key_configured": bool(settings.SARVAM_API_KEY),
+        "youtube_cookies_loaded": bool(_get_cookie_args()),
         "supported_speeds": ALLOWED_SPEEDS,
         "ffmpeg": settings.FFMPEG_PATH,
         "ffmpeg_detected": Path(settings.FFMPEG_PATH).exists() or bool(settings.FFMPEG_PATH),
