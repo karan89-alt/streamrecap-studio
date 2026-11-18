@@ -37,6 +37,7 @@ class YouTubeExtractor:
         # Cache (video_url, audio_url_or_None, timestamp) with 20-min TTL
         self._direct_url_cache: Dict[str, Tuple[str, Optional[str], float]] = {}
         self._url_lock = asyncio.Lock()
+        self.last_debug: str = ""
 
     def _normalize_url(self, url: str) -> str:
         clean_url = (url or "").strip()
@@ -136,7 +137,8 @@ class YouTubeExtractor:
                         return (lines[0], lines[1])
                     elif len(lines) == 1:
                         return (lines[0], None)
-                logger.warning(f"yt-dlp -g stderr: {res.stderr[:250]}")
+                self.last_debug = f"ytdlp_g_rc={res.returncode}: {res.stderr[:220]}"
+                logger.warning(self.last_debug)
                 return None
 
             for label, cmd in [("visionos-1080p", cmd_hd_visionos), ("default-1080p", cmd_hd_default)]:
@@ -245,7 +247,7 @@ class YouTubeExtractor:
             v_url, a_url = stream_pair
             try:
                 if a_url:
-                    # Dual-input DASH native 1080p video + stereo AAC audio (reset audio PTS to 0.000!)
+                    # Dual-input DASH native 1080p video + stereo AAC audio
                     cmd_stream = [
                         settings.FFMPEG_PATH,
                         "-y",
@@ -265,10 +267,8 @@ class YouTubeExtractor:
                         "-map", "0:v:0",
                         "-map", "1:a:0",
                         "-c:v", "copy",
-                        "-af", "asetpts=PTS-STARTPTS",
                         "-c:a", "aac",
                         "-b:a", "128k",
-                        "-shortest",
                         "-avoid_negative_ts", "make_zero",
                         str(out_path)
                     ]
@@ -289,7 +289,9 @@ class YouTubeExtractor:
                     ]
 
                 def _run_ffmpeg():
-                    res = subprocess.run(cmd_stream, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=35)
+                    res = subprocess.run(cmd_stream, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=40)
+                    if res.returncode != 0:
+                        self.last_debug = f"ff_rc={res.returncode}: {res.stderr.decode('utf-8', errors='ignore')[-220:]}"
                     return res.returncode
 
                 code = await asyncio.to_thread(_run_ffmpeg)

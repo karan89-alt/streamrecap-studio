@@ -260,8 +260,7 @@ async def process_recap_pipeline(
 
         if not valid_clip_paths_only:
             raise RuntimeError(
-                "Could not extract 1080p clips from this YouTube URL. "
-                "Please verify the link is public and try again."
+                f"Could not extract 1080p clips from this YouTube URL. ({extractor.last_debug[:180]})"
             )
 
         # Build exact concat list: outpoint = (audio_dur * speed), so after setpts=PTS/speed
