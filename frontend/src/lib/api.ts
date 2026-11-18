@@ -16,7 +16,8 @@ export async function startRecap(
   url: string,
   target_minutes: number,
   story_style: string,
-  voice_speaker: string = "shubh"
+  voice_speaker: string = "shubh",
+  playback_speed: number = 1.0
 ) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (SARVAM_KEY) {
@@ -26,7 +27,7 @@ export async function startRecap(
   const res = await fetch(`${API_BASE}/api/recap/generate`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ url, target_minutes, story_style, voice_speaker }),
+    body: JSON.stringify({ url, target_minutes, story_style, voice_speaker, playback_speed }),
   });
   if (!res.ok) {
     const err = await res.json();

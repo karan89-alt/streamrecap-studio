@@ -31,7 +31,7 @@ logger = logging.getLogger("streamrecap.api")
 app = FastAPI(
     title="StreamRecap Studio API",
     description="Audio-driven Full HD gaming recap studio powered by Sarvam AI Indian TTS & 1080p60 stream editing",
-    version="3.0.0"
+    version="3.1.0"
 )
 
 app.add_middleware(
@@ -53,12 +53,20 @@ director = AIDirector()
 voice_mixer = VoiceMixer()
 
 
+ALLOWED_SPEEDS = [1.0, 1.25, 1.5, 1.75, 2.0]
+
+
+def _normalize_speed(val: float) -> float:
+    return min(ALLOWED_SPEEDS, key=lambda x: abs(x - float(val)))
+
+
 # --- Models ---
 class CreateRecapRequest(BaseModel):
     url: str
     target_minutes: int = 15
     story_style: str = "Explainer Storytelling"
     voice_speaker: str = "shubh"  # Sarvam AI bulbul:v3 Indian speaker
+    playback_speed: float = 1.0   # 1.0, 1.25, 1.5, 1.75, or 2.0
 
 
 class UpdateScriptRequest(BaseModel):
@@ -113,18 +121,21 @@ async def process_recap_pipeline(
     target_minutes: int,
     story_style: str,
     voice_speaker: str,
+    playback_speed: float = 1.0,
     sarvam_key: Optional[str] = None
 ):
     try:
         target_minutes = max(1, min(30, int(target_minutes)))
         target_seconds = target_minutes * 60
+        speed = _normalize_speed(playback_speed)
+        speed_label = f"{speed:g}x"
 
         # Stage 1: Analyze YouTube stream
         await notify_job_update(
             job_id,
             stage_num=1,
             progress=8,
-            message="Analyzing YouTube stream & detecting highlights..."
+            message=f"Analyzing YouTube stream ({speed_label} mode)..."
         )
 
         metadata = await extractor.get_stream_metadata(url)
@@ -139,16 +150,15 @@ async def process_recap_pipeline(
             metadata=metadata
         )
 
-        # Stage 2a: Write rich Hindi script (slight buffer so Sarvam audio fills full target duration)
+        # Stage 2a: Write rich Hindi script scaled to selected speed so audio fills full duration
         await notify_job_update(
             job_id,
             stage_num=2,
             progress=24,
-            message=f"Writing {story_style} Hindi script..."
+            message=f"Writing {story_style} script for {speed_label} speed..."
         )
 
-        # Request ~25% extra script lines so real spoken Sarvam audio fills the exact requested duration
-        script_buffer_minutes = max(target_minutes + 1, int(round(target_minutes * 1.25)))
+        script_buffer_minutes = max(target_minutes + 1, int(round(target_minutes * speed * 1.25)))
         raw_script_segments = await director.create_story_and_script(
             stream_meta=metadata,
             hype_spikes=hype_spikes,
@@ -156,12 +166,12 @@ async def process_recap_pipeline(
             story_style=story_style
         )
 
-        # Stage 2b: Synthesize Sarvam AI (bulbul:v3) Indian Voice FIRST!
+        # Stage 2b: Synthesize Sarvam AI (bulbul:v3) Indian Voice at EXACT selected speed!
         await notify_job_update(
             job_id,
             stage_num=2,
             progress=30,
-            message=f"Generating Sarvam AI Indian voice ({voice_speaker.title()})..."
+            message=f"Generating Sarvam AI voice ({voice_speaker.title()} @ {speed_label})..."
         )
 
         async def _on_tts_progress(done: int, total: int):
@@ -170,7 +180,7 @@ async def process_recap_pipeline(
                 job_id,
                 stage_num=2,
                 progress=pct,
-                message=f"Sarvam AI Voice ({voice_speaker.title()}): {done}/{total} lines..."
+                message=f"Sarvam AI ({voice_speaker.title()} @ {speed_label}): {done}/{total} lines..."
             )
 
         sarvam_result = await voice_mixer.synthesize_sarvam_audio_timeline(
@@ -178,6 +188,7 @@ async def process_recap_pipeline(
             speaker=voice_speaker,
             job_id=job_id,
             target_seconds=target_seconds,
+            playback_speed=speed,
             api_key=sarvam_key,
             progress_callback=_on_tts_progress
         )
@@ -191,34 +202,34 @@ async def process_recap_pipeline(
                 job_id,
                 stage_num=3,
                 progress=52,
-                message=f"Sarvam AI audio ready ({audio_total_fmt})! Cutting 1080p video to match audio...",
+                message=f"Sarvam AI {speed_label} audio ready ({audio_total_fmt})! Cutting 1080p clips...",
                 segments=active_segments
             )
         else:
-            # Graceful fallback if no Sarvam key
             active_segments = raw_script_segments[: max(6, round(target_seconds / 10))]
+            for seg in active_segments:
+                seg["source_duration"] = round(float(seg["duration"]) * speed, 3)
             await notify_job_update(
                 job_id,
                 stage_num=3,
                 progress=52,
-                message="Extracting 1080p Full HD video clips...",
+                message=f"Extracting 1080p clips for {speed_label} render...",
                 segments=active_segments
             )
 
-        # Stage 3: Extract TRUE Native 1080p60 YouTube clips matched to EVERY Sarvam audio beat!
+        # Stage 3: Extract TRUE Native 1080p60 clips sized to (audio_dur * speed) + buffer!
         total_clips = len(active_segments)
         completed_downloads = 0
         dl_sem = asyncio.Semaphore(5)
 
-        # Pre-warm native 1080p60 DASH URL once
         await extractor.get_direct_stream_url(metadata.get("url", url))
 
         async def _download_one(idx: int, seg: Dict[str, Any]):
             nonlocal completed_downloads
             clip_filename = f"clip_{job_id}_{idx:03d}.mp4"
-            # Request exact audio duration + 3.0s safety buffer so outpoint trimming always has full frames
             req_start = float(seg["vod_start"])
-            req_dur = float(seg["duration"]) + 3.0
+            needed_src = float(seg.get("source_duration") or (float(seg["duration"]) * speed))
+            req_dur = needed_src + 3.0
             async with dl_sem:
                 clip_path = await extractor.download_section(
                     url=metadata.get("url", url),
@@ -232,7 +243,7 @@ async def process_recap_pipeline(
                     job_id,
                     stage_num=3,
                     progress=52 + int((completed_downloads / max(1, total_clips)) * 30),
-                    message=f"Cutting 1080p clip {completed_downloads}/{total_clips} to match Sarvam audio..."
+                    message=f"Cutting 1080p clip {completed_downloads}/{total_clips} ({speed_label})..."
                 )
                 return idx, clip_path
 
@@ -240,7 +251,6 @@ async def process_recap_pipeline(
         results = await asyncio.gather(*tasks)
         results.sort(key=lambda x: x[0])
 
-        # Build frame-accurate concat list where EVERY clip's outpoint == its exact Sarvam audio duration!
         valid_clip_entries = []
         valid_clip_paths_only = []
         for idx, clip_path in results:
@@ -254,6 +264,8 @@ async def process_recap_pipeline(
                 "Please verify the link is public and try again."
             )
 
+        # Build exact concat list: outpoint = (audio_dur * speed), so after setpts=PTS/speed
+        # every single video clip equals EXACT audio_dur to the millisecond!
         concat_txt = TEMP_DIR / f"concat_audio_sync_{job_id}.txt"
         final_segments: List[Dict[str, Any]] = []
         running_t = 0.0
@@ -261,18 +273,17 @@ async def process_recap_pipeline(
         with open(concat_txt, "w", encoding="utf-8") as cf:
             for idx, clip_path in valid_clip_entries:
                 seg = dict(active_segments[idx])
-                # If a single clip failed transiently, reuse an adjacent extracted clip so audio NEVER drifts!
                 chosen_path = clip_path if (clip_path and Path(clip_path).exists()) else valid_clip_paths_only[idx % len(valid_clip_paths_only)]
                 real_clip_dur = await extractor.get_clip_duration(chosen_path)
-                desired_dur = float(seg["duration"])
+                desired_final_dur = float(seg["duration"])
+                desired_src_dur = float(seg.get("source_duration") or (desired_final_dur * speed))
 
                 safe_p = str(Path(chosen_path).resolve()).replace("\\", "/")
-                if real_clip_dur >= desired_dur:
+                if real_clip_dur >= desired_src_dur:
                     cf.write(f"file '{safe_p}'\n")
-                    cf.write(f"outpoint {desired_dur:.3f}\n")
+                    cf.write(f"outpoint {desired_src_dur:.3f}\n")
                 else:
-                    # If source clip is slightly shorter than audio line, loop remainder seamlessly so audio stays 100% locked
-                    rem = desired_dur
+                    rem = desired_src_dur
                     while rem > 0.2:
                         take = min(rem, max(1.0, real_clip_dur - 0.1))
                         cf.write(f"file '{safe_p}'\n")
@@ -280,24 +291,23 @@ async def process_recap_pipeline(
                         rem -= take
 
                 seg["video_start"] = round(running_t, 3)
-                seg["video_end"] = round(running_t + desired_dur, 3)
+                seg["video_end"] = round(running_t + desired_final_dur, 3)
                 seg["video_start_fmt"] = _fmt_mmss(running_t)
-                seg["video_end_fmt"] = _fmt_mmss(running_t + desired_dur)
-                running_t += desired_dur
+                seg["video_end_fmt"] = _fmt_mmss(running_t + desired_final_dur)
+                running_t += desired_final_dur
                 final_segments.append(seg)
 
-        # Save final audio-synced script JSON
         script_file = SCRIPTS_DIR / f"script_{job_id}.json"
         with open(script_file, "w", encoding="utf-8") as f:
             json.dump(final_segments, f, indent=2, ensure_ascii=False)
 
-        # Stage 4: Single-pass TRUE 1080p Full HD Render (Audio-Driven Video + Sarvam AI Voice + Viral Subtitles)
+        # Stage 4: Single-pass TRUE 1080p Render at EXACT speed (Video + Sarvam Voice + Game Audio + Captions)
         async with RENDER_SEMAPHORE:
             await notify_job_update(
                 job_id,
                 stage_num=4,
                 progress=88,
-                message="Rendering 1080p Full HD video with Sarvam AI voice & viral captions...",
+                message=f"Rendering 1080p Full HD at {speed_label} with Sarvam AI voice & captions...",
                 segments=final_segments
             )
 
@@ -314,7 +324,8 @@ async def process_recap_pipeline(
                 ass_subtitles_path=subtitle_files["ass_path"],
                 output_filename=final_filename,
                 master_voice_path=master_voice_path,
-                game_audio_filename=game_audio_filename
+                game_audio_filename=game_audio_filename,
+                playback_speed=speed
             )
 
         final_url = f"/storage/exports/{final_filename}"
@@ -327,13 +338,14 @@ async def process_recap_pipeline(
             job_id,
             stage_num=5,
             progress=100,
-            message=f"1080p Full HD Recap Ready ({voice_speaker.title()} - Sarvam AI)!",
+            message=f"1080p Full HD Recap Ready ({voice_speaker.title()} @ {speed_label})!",
             status="COMPLETED",
             final_video_url=final_url,
             stitched_video_url=final_url,
             game_audio_video_url=game_audio_url,
             srt_url=srt_url,
             voice_speaker=voice_speaker,
+            playback_speed=speed,
             segments=final_segments,
             metadata=metadata,
             render_info=voice_mixer.last_render_info
@@ -357,8 +369,9 @@ async def process_recap_pipeline(
 async def health_check():
     return {
         "status": "healthy",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "tts_engine": "sarvam-bulbul-v3",
+        "supported_speeds": ALLOWED_SPEEDS,
         "ffmpeg": settings.FFMPEG_PATH,
         "ffmpeg_detected": Path(settings.FFMPEG_PATH).exists() or bool(settings.FFMPEG_PATH),
         "active_jobs_count": sum(1 for j in JOBS.values() if j.get("status") == "PROCESSING")
@@ -377,6 +390,7 @@ async def start_recap_job(
     x_sarvam_key: Optional[str] = Header(default=None, alias="X-Sarvam-Key")
 ):
     job_id = str(uuid.uuid4())[:8]
+    speed = _normalize_speed(req.playback_speed)
 
     JOBS[job_id] = {
         "id": job_id,
@@ -384,10 +398,11 @@ async def start_recap_job(
         "target_minutes": req.target_minutes,
         "story_style": req.story_style,
         "voice_speaker": req.voice_speaker,
+        "playback_speed": speed,
         "status": "PROCESSING",
         "stage": 1,
         "progress": 5,
-        "message": "Initializing Sarvam AI audio-driven studio...",
+        "message": f"Initializing Sarvam AI studio ({speed:g}x speed)...",
         "created_at": asyncio.get_event_loop().time(),
     }
     JOB_EVENT_QUEUES[job_id] = []
@@ -399,10 +414,11 @@ async def start_recap_job(
         target_minutes=req.target_minutes,
         story_style=req.story_style,
         voice_speaker=req.voice_speaker,
+        playback_speed=speed,
         sarvam_key=x_sarvam_key or settings.SARVAM_API_KEY
     )
 
-    return {"job_id": job_id, "status": "QUEUED"}
+    return {"job_id": job_id, "status": "QUEUED", "playback_speed": speed}
 
 
 @app.get("/api/jobs/{job_id}")

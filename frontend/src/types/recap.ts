@@ -36,6 +36,7 @@ export interface JobState {
   target_minutes: number;
   story_style: string;
   voice_speaker?: string;
+  playback_speed?: number;
   status: "IDLE" | "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED";
   stage: number;
   progress: number;

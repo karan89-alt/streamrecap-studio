@@ -102,26 +102,27 @@ class VoiceMixer:
         speaker: str,
         job_id: str,
         target_seconds: int,
+        playback_speed: float = 1.0,
         api_key: Optional[str] = None,
         progress_callback=None,
     ) -> Optional[Dict[str, Any]]:
         """
-        Audio-First Synthesis via Sarvam AI (bulbul:v3):
-        1. Synthesizes every Hindi dialogue line in parallel (5 workers).
-        2. Measures exact duration of every generated WAV clip + adds 0.25s natural breathing pause.
-        3. Trims/selects exact segments so total spoken audio matches target_seconds.
-        4. Concatenates & broadcast-normalizes all clips into master_sarvam_{job_id}.wav.
-        5. Returns updated script segments with exact audio-driven video_start / video_end!
+        Audio-First Synthesis via Sarvam AI (bulbul:v3) at the EXACT selected speed (1x - 2x):
+        1. Synthesizes every Hindi line at exact pace=playback_speed (1.0, 1.25, 1.5, 1.75, or 2.0).
+        2. Measures exact duration of every generated WAV clip + proportional pause.
+        3. Sets exact source_duration = audio_dur * playback_speed so video clips speed up by
+           exact playback_speed to match every spoken syllable with ZERO drift!
         """
         key = (api_key or settings.SARVAM_API_KEY or "").strip()
         if not key:
             logger.warning("No SARVAM_API_KEY provided — skipping Sarvam AI TTS.")
             return None
 
+        speed = max(1.0, min(2.0, float(playback_speed)))
         sem = asyncio.Semaphore(5)
         total = len(script_segments)
         completed = 0
-        pause_sec = 0.25  # natural breathing beat between scene cuts
+        pause_sec = round(max(0.12, 0.25 / speed), 3)
 
         async def _synth_one(idx: int, seg: Dict[str, Any]):
             nonlocal completed
@@ -134,11 +135,10 @@ class VoiceMixer:
                     text = "Dekhiye aage kya hota hai!"
 
                 wav_bytes = await asyncio.to_thread(
-                    self._call_sarvam_tts_sync, text, speaker, key, 1.06
+                    self._call_sarvam_tts_sync, text, speaker, key, speed
                 )
                 raw_wav.write_bytes(wav_bytes)
 
-                # Add natural 0.25s tail pause & standardize sample rate to 44.1kHz stereo
                 def _pad_and_measure():
                     cmd = [
                         self.ffmpeg_path,
@@ -160,7 +160,7 @@ class VoiceMixer:
                 if progress_callback:
                     await progress_callback(completed, total)
 
-                return idx, padded_wav, max(2.0, exact_dur)
+                return idx, padded_wav, max(1.5, exact_dur)
 
         tasks = [_synth_one(i, seg) for i, seg in enumerate(script_segments)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -177,14 +177,12 @@ class VoiceMixer:
 
         valid_items.sort(key=lambda x: x[0])
 
-        # Build exact audio-driven timeline matching target_seconds
         synced_segments: List[Dict[str, Any]] = []
         selected_wavs: List[Path] = []
         cumulative_time = 0.0
 
         for idx, wav_path, audio_dur in valid_items:
             if cumulative_time > 0 and (cumulative_time + audio_dur) > (target_seconds + 15):
-                # Keep the final outro segment if we haven't included it yet
                 break
 
             seg = dict(script_segments[idx])
@@ -193,10 +191,10 @@ class VoiceMixer:
             seg["video_start"] = round(cumulative_time, 3)
             seg["video_end"] = round(cumulative_time + audio_dur, 3)
             seg["duration"] = round(audio_dur, 3)
+            seg["source_duration"] = round(audio_dur * speed, 3)
             seg["video_start_fmt"] = self._fmt_mmss(cumulative_time)
             seg["video_end_fmt"] = self._fmt_mmss(cumulative_time + audio_dur)
-            # Update vod_end to request enough source footage for this exact audio clip
-            seg["vod_end"] = round(float(seg["vod_start"]) + audio_dur + 2.5, 2)
+            seg["vod_end"] = round(float(seg["vod_start"]) + (audio_dur * speed) + 3.0, 2)
 
             cumulative_time += audio_dur
             synced_segments.append(seg)
@@ -276,19 +274,23 @@ class VoiceMixer:
         output_filename: str,
         master_voice_path: Optional[str] = None,
         game_audio_filename: Optional[str] = None,
+        playback_speed: float = 1.0,
     ) -> Dict[str, str]:
         """
-        Single-Pass Audio-Driven Full HD 1080p Render:
-        - Reads frame-accurate concat_txt_path (every clip has exact `outpoint` matching its Sarvam audio!).
-        - Applies 1.06x Anti-Content-ID crop + crisp Lanczos 1920x1080 scale + single viral yellow captions.
-        - Maps Sarvam AI voiceover as the primary audio track (so Indian AI explains the whole video by default).
-        - Extracts exact synced original game audio (.m4a) for the player's [ Original Audio: OFF / ON ] toggle!
+        Single-Pass Speed-Exact Audio-Driven Full HD 1080p Render:
+        - Reads frame-accurate concat_txt_path (each clip has exact `outpoint = audio_dur * speed`).
+        - Applies `setpts=PTS/{speed}` FIRST so video clips run at EXACT selected speed (1x..2x)
+          and match the Sarvam AI voiceover duration to the millisecond!
+        - Applies 1.06x crop + Lanczos 1920x1080 scale + single viral yellow ASS captions AFTER setpts.
+        - Extracts exact speed-matched original game audio (`atempo={speed}`) for the toggle button!
         """
         out_video_path = EXPORTS_DIR / output_filename
         out_game_audio_path = EXPORTS_DIR / game_audio_filename if game_audio_filename else None
+        speed = max(1.0, min(2.0, float(playback_speed)))
 
         safe_ass_path = str(Path(ass_subtitles_path).resolve()).replace("\\", "/").replace(":", "\\:")
-        base_vf = "crop=trunc(iw*0.94/2)*2:trunc(ih*0.94/2)*2,scale=1920:1080:flags=lanczos,fps=30,setsar=1"
+        speed_vf = f"setpts=PTS/{speed}," if speed > 1.0 else ""
+        base_vf = f"{speed_vf}crop=trunc(iw*0.94/2)*2:trunc(ih*0.94/2)*2,scale=1920:1080:flags=lanczos,fps=30,setsar=1"
         vf_with_ass = f"{base_vf},ass='{safe_ass_path}'"
 
         def _is_valid(path: Path) -> bool:
@@ -312,8 +314,10 @@ class VoiceMixer:
                     "-shortest",
                 ])
             else:
+                audio_speed_af = f"atempo={speed}," if speed > 1.0 else ""
                 cmd.extend([
                     "-vf", vf,
+                    "-af", f"aresample=async=1:first_pts=0,{audio_speed_af}highpass=f=100,lowpass=f=7500",
                     "-map", "0:v:0",
                     "-map", "0:a:0?",
                 ])
@@ -335,8 +339,13 @@ class VoiceMixer:
             return cmd
 
         def _run():
-            # 1. Extract exact synced original game audio track (fast, ~2s, ~4MB) for Original Audio toggle
+            # 1. Extract exact speed-matched original game audio track (.m4a)
             if out_game_audio_path:
+                af_chain = (
+                    f"aresample=async=1:first_pts=0,atempo={speed},highpass=f=100,lowpass=f=7500"
+                    if speed > 1.0
+                    else "aresample=async=1:first_pts=0,highpass=f=100,lowpass=f=7500"
+                )
                 cmd_game_audio = [
                     self.ffmpeg_path,
                     "-y",
@@ -345,7 +354,7 @@ class VoiceMixer:
                     "-safe", "0",
                     "-i", str(concat_txt_path),
                     "-vn",
-                    "-af", "highpass=f=100,lowpass=f=7500",
+                    "-af", af_chain,
                     "-c:a", "aac",
                     "-b:a", "128k",
                     "-ar", "44100",
@@ -354,36 +363,37 @@ class VoiceMixer:
                 ]
                 subprocess.run(cmd_game_audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
 
-            # 2. Attempt 1: Full HD 1080p + 1.06x Crop + Single Viral ASS Captions + Sarvam Voice
+            # 2. Attempt 1: Full HD 1080p + Speed + 1.06x Crop + Single Viral ASS Captions + Sarvam Voice
             res = subprocess.run(_build_cmd(vf_with_ass), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if res.returncode == 0 and _is_valid(out_video_path):
                 sz = out_video_path.stat().st_size
                 self.last_render_info = {
                     "mode": "1080p_sarvam_audio_driven_ass",
+                    "speed": speed,
                     "bytes": sz,
                     "returncode": 0
                 }
-                logger.info(f"Audio-driven 1080p + Sarvam AI render succeeded ({sz} bytes)")
+                logger.info(f"Audio-driven 1080p ({speed}x) + Sarvam AI render succeeded ({sz} bytes)")
                 return
 
             err1 = res.stderr.decode("utf-8", errors="ignore")[-400:]
             logger.warning(f"Attempt 1 failed (code={res.returncode}): {err1}")
 
-            # Attempt 2: 720p HD + Viral ASS + Sarvam Voice (low-RAM cloud fallback)
-            vf_720 = f"crop=trunc(iw*0.94/2)*2:trunc(ih*0.94/2)*2,scale=1280:720:flags=lanczos,fps=30,setsar=1,ass='{safe_ass_path}'"
+            # Attempt 2: 720p HD + Speed + Viral ASS + Sarvam Voice
+            vf_720 = f"{speed_vf}crop=trunc(iw*0.94/2)*2:trunc(ih*0.94/2)*2,scale=1280:720:flags=lanczos,fps=30,setsar=1,ass='{safe_ass_path}'"
             res2 = subprocess.run(_build_cmd(vf_720), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if res2.returncode == 0 and _is_valid(out_video_path):
                 sz = out_video_path.stat().st_size
-                self.last_render_info = {"mode": "720p_sarvam_ass", "bytes": sz, "err1": err1}
+                self.last_render_info = {"mode": "720p_sarvam_ass", "speed": speed, "bytes": sz, "err1": err1}
                 return
 
             err2 = res2.stderr.decode("utf-8", errors="ignore")[-400:]
             logger.warning(f"Attempt 2 failed (code={res2.returncode}): {err2}")
 
-            # Attempt 3: Pure 1080p without ASS burn-in
+            # Attempt 3: Pure 1080p + Speed without ASS burn-in
             res3 = subprocess.run(_build_cmd(base_vf), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if res3.returncode == 0 and _is_valid(out_video_path):
-                self.last_render_info = {"mode": "1080p_no_ass", "bytes": out_video_path.stat().st_size, "err1": err1}
+                self.last_render_info = {"mode": "1080p_no_ass", "speed": speed, "bytes": out_video_path.stat().st_size, "err1": err1}
                 return
 
             raise RuntimeError(f"FFmpeg render failed: {err1}")

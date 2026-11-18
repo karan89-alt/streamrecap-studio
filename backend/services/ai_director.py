@@ -163,38 +163,72 @@ class AIDirector:
     def _get_style_pack(self, story_style: str, channel: str) -> Dict[str, Any]:
         s = story_style.lower()
 
-        if "funny" in s or "fact" in s:
+        if "fact" in s and "funny" not in s:
             return {
-                "hook": f"Swagat hai dosto! Aaj {channel} ne socha tha ki yeh pro mastermind banenge, par agle 5 minute me jo comedy hui woh dekh kar hasi nahi rukegi!",
+                "hook": f"Kya aapko pata hai {channel} ke is GTA V gameplay me aise 15 hidden details aur mind-blowing gaming facts chhupe hain jo 99 percent players miss kar dete hain?",
                 "act1": [
-                    {"note": "Vehicle launch blunder", "dialogue": "Bhai ne gadi aisi thoki jaise brake ki jagah accelerator chipka diya ho! Fun fact: GTA V me NPCs ka driving AI intentional chaos ke liye banaya gaya hai!"},
-                    {"note": "Stealth alarm triggered", "dialogue": "Ninja stealth plan tha, lekin bhai ne khud siren baja diya! Fact yeh hai ki guards ka hearing radius 40 meter tak kaam karta hai!"},
-                    {"note": "Wrong weapon equipped", "dialogue": "Gun fight me sniper nikalne ki jagah bhai ne flashlight nikal li! Interesting fact: Stress me 60 percent gamers wrong weapon wheel select kar lete hain!"},
-                    {"note": "GPS route confusion", "dialogue": "GPS bol raha tha right mudne ko, bhai seedha divider par chadh gaye! Kya aapko pata hai Los Santos ka map real Los Angeles par based hai?"},
-                    {"note": "Crew coordination fail", "dialogue": "Team plan tha ek saath entry karne ka, par aadhi team piche coffee peeti reh gayi! Fact: Multiplayer sync me 2 second ka delay bhi mission uda deta hai!"},
-                    {"note": "Security camera spotted", "dialogue": "Camera ke saamne khade hokar bhai bol rahe hain main dikh nahi raha! Fact: GTA ke CCTV cameras 120 degree wide angle tak scan karte hain!"},
+                    {"note": "Map design fact", "dialogue": "Fact number one: Los Santos ka poora map real Los Angeles ke 250 se zyada asli landmarks ko scan karke banaya gaya hai."},
+                    {"note": "NPC AI routine fact", "dialogue": "Kya aap jaante hain GTA V ke har pedestrian NPC ka apna daily routine aur reaction memory system code kiya gaya hai?"},
+                    {"note": "Guard hearing physics", "dialogue": "Stealth missions ka bada fact: Game ke security guards ka hearing radius 40 meter aur vision cone exact 120 degree hota hai."},
+                    {"note": "Sound engineering fact", "dialogue": "Rockstar engineers ne sirf car engines aur exhaust notes record karne ke liye 400 se zyada asli supercars track par chalayi thi."},
+                    {"note": "Weapon ballistics fact", "dialogue": "Interesting detail: GTA V me har gun ki bullet drop, recoil pattern aur surface penetration material ke hisaab se alag hoti hai."},
+                    {"note": "Weather engine fact", "dialogue": "Game me barish hote hi sadak ka friction coefficient 35 percent kam ho jata hai, jisse high-speed corners par gaadi zyada drift karti hai."},
                 ],
                 "act2": [
-                    {"act": "Act II: Rocket Blunder", "note": "Rocket hits lamp post", "dialogue": "Rocket launcher nikala police udane ke liye, par missile khambe se takra gayi aur bhai khud hawa me astronaut ban gaye!"},
-                    {"act": "Act II: Police Chase", "note": "5-Star wanted chaos", "dialogue": "5-Star wanted level lagte hi poora shehar piche pad gaya! Amazing fact: 5-star par NOOSE tactical units aur armored trucks spawn hote hain!"},
-                    {"act": "Act II: Bridge Stunt", "note": "Car flips into canal", "dialogue": "Bhai ne bola legend stunt dekho aur agle hi pal gaadi seedha naale me gir gayi! Fact: Car ka center of gravity air control decide karta hai!"},
-                    {"act": "Act II: Chopper Takedown", "note": "Helicopter dodging missiles", "dialogue": "Upar se police helicopter firing kar raha hai aur bhai road par gol-gol ghum rahe hain! Fun fact: Police choppers me unlimited ammo script hota hai!"},
-                    {"act": "Act II: Vault Rush", "note": "Grabbing loot under fire", "dialogue": "Goliyan chal rahi hain par bhai ko ek-ek note ginke bag me bharna hai! Fact: Heavy loot bag aapki sprint speed 15 percent slow kar deta hai!"},
-                    {"act": "Act II: Street Ambush", "note": "Roadblock crash", "dialogue": "Samne police ne 6 gaadiyon ka blockade lagaya aur bhai ne bina brake mare seedha andar ghusa diya! Physics ne bhi haath jod liye!"},
-                    {"act": "Act II: Parachute Panic", "note": "Late parachute deploy", "dialogue": "Building se kood gaye par parachute kholna bhool gaye! Fact: Zameen se sirf 15 meter upar bhi reserve chute aapko bacha sakta hai!"},
-                    {"act": "Act II: NPC Karma", "note": "Random civilian blocks car", "dialogue": "Sab kuch sahi chal raha tha tabhi ek random civilian ne aakar gaadi thok di! GTA ka classic rule: Jab jaldi ho, traffic double ho jata hai!"},
-                    {"act": "Act II: Tire Blowout", "note": "Driving on metal rims", "dialogue": "Chaar me se teen tyre phat chuke hain, gaadi se chingariyan nikal rahi hain, par bhai bol rahe hain koi tension nahi!"},
-                    {"act": "Act II: Explosion Chain", "note": "Chain reaction blast", "dialogue": "Ek goli petrol tank pe lagi aur poora chauraha Diwali ban gaya! Fact: GTA V me chain explosions 12 gaadiyon tak spread ho sakte hain!"},
-                    {"act": "Act II: Narrow Alley", "note": "Stuck between walls", "dialogue": "Shortcut lene ke chakkar me gaadi gali ke beech me phans gayi! Ab na aage ja sakte hain na piche, bas horn baja rahe hain!"},
-                    {"act": "Act II: Health 1 HP", "note": "Surviving with 1 HP", "dialogue": "Health bar dekho, bas ek phoonk ki doori par hai! Fact: Snacks khane se cover me bina animation delay ke health turant badhti hai!"},
+                    {"act": "Act II: Police AI Facts", "note": "5-Star dispatch system", "dialogue": "Police system ka crazy fact: 3-star par choppers aate hain, par 5-star lagte hi NOOSE tactical squads dynamic roadblock algorithm run karte hain."},
+                    {"act": "Act II: Physics Secrets", "note": "Car aerodynamics & gravity", "dialogue": "Driving physics fact: Har gaadi ka center-of-mass aur suspension stiffness hawa me jump ke baad uska landing angle decide karta hai."},
+                    {"act": "Act II: Hidden Mechanics", "note": "Heavy loot bag penalty", "dialogue": "Heist gameplay detail: Jab aapke paas heavy gold ya cash bag hota hai, character ki sprint speed aur jump height 15 percent kam ho jati hai."},
+                    {"act": "Act II: Explosion Science", "note": "Fuel tank chain blast", "dialogue": "Hidden detail: Agar aap kisi car ke rear-left fuel tank par exact goli maarein, toh poori gaadi bina grenade ke turant blast ho jati hai."},
+                    {"act": "Act II: Radar & Tunnels", "note": "Underground blind spot", "dialogue": "Pro gaming fact: Police helicopters ka thermal aur visual radar Los Santos ke metro tunnels aur underground drains ke andar kaam nahi karta."},
+                    {"act": "Act II: Tire & Rim Physics", "note": "Sparks on bare rims", "dialogue": "Detail dekhiye: Tyre phatne ke baad jab metal rim road par ragadta hai, toh sparks petrol trail me aag bhi laga sakte hain."},
+                    {"act": "Act II: Water & Submarines", "note": "Ocean depth pressure", "dialogue": "Ocean secret: GTA V ke samundar me 500 feet se zyada neeche jaane par water pressure ki wajah se submarine ka hull tootna shuru ho jata hai."},
+                    {"act": "Act II: Glass & Armor", "note": "Bulletproof glass limit", "dialogue": "Armor fact: Armored Kuruma aur Insurgent ke bulletproof sheeshe exactly 16 high-caliber bullets jhelne ke baad toot jaate hain."},
+                    {"act": "Act II: Parachute Mechanics", "note": "Reserve chute detail", "dialogue": "Skydiving fact: Agar aap main parachute galti se kaat dein, toh character ke paas hamesha ek hidden reserve parachute backup hota hai."},
+                    {"act": "Act II: Traffic Spawning", "note": "AI lane prediction", "dialogue": "Game design secret: High-speed chase me tension badhane ke liye traffic AI intersections par aapki speed predict karke cars spawn karta hai."},
+                    {"act": "Act II: Health & Cover", "note": "Instant snack trick", "dialogue": "Pro player fact: Khule me snacks khane par animation delay aata hai, lekin cover me ya gaadi ke andar health bina delay turant full hoti hai."},
+                    {"act": "Act II: Lighting Engine", "note": "Real-time shadows", "dialogue": "Graphics fact: Raat ke waqt police sirens ki red-blue lights aas-paas ki 60 se zyada surfaces par real-time reflection generate karti hain."},
                 ],
                 "act3": [
-                    {"note": "Final roadblock dodge", "dialogue": "Aakhiri highway blockade tha, chaaro taraf sirens baj rahe the, aur bhai ne impossible drift marke nikal liya!"},
-                    {"note": "Subway tunnel escape", "dialogue": "Police ko chakma dene ke liye gaadi seedha metro tunnel me daal di! Pro fact: Underground tunnels me police helicopter aapko track nahi kar sakta!"},
-                    {"note": "Clutch safehouse reach", "dialogue": "Sirf 5 second bache the aur aakhirkaar safehouse ka gate khul gaya! Itne blunders ke baad bhi mission pass ho gaya!"},
-                    {"note": "Score celebration", "dialogue": "Poora loot account me aa chuka hai aur police abhi bhi khali highway par dhundh rahi hai! Kya epic comedy getaway tha!"},
+                    {"note": "Wanted cooldown math", "dialogue": "Escape system fact: Line-of-sight tootne ke baad 5-star wanted level clear hone me exact 60 seconds ka cooldown timer chalta hai."},
+                    {"note": "Vehicle paint trick", "dialogue": "Classic GTA secret: Agar aap police ki nazar se chhup kar gaadi ka colour ya mask badal lein, toh wanted level 1 star turant kam ho jata hai."},
+                    {"note": "World record trivia", "dialogue": "Amazing milestone: GTA V duniya ka sabse zyada kamai karne wala entertainment product hai, jiske 200 million se zyada copies bik chuki hain."},
+                    {"note": "Final detail wrap", "dialogue": "Har baar jab aap Los Santos me koi mission khelte hain, game ka dynamic engine hazaaron chhote variables ko real-time calculate karta hai."},
                 ],
-                "outro": "Toh dosto, yeh the aaj ke sabse hilarious moments aur crazy gaming facts! Aapka favourite scene kaunsa tha, comment me zaroor batana!",
+                "outro": "Inme se kaunsa GTA fact aapko sabse zyada mind-blowing laga? Comment me number zaroor likhna aur aise hi facts ke liye subscribe kar lo!",
+            }
+
+        if "funny" in s or "roast" in s:
+            return {
+                "hook": f"Swagat hai dosto! Aaj {channel} ne bade confidence se kaha tha ki main pro driver hoon, par aage jo comedy aur blunders hue woh dekh kar hasi nahi rukegi!",
+                "act1": [
+                    {"note": "Vehicle launch blunder", "dialogue": "Mission shuru hote hi bhai ne gaadi seedha khambe me thok di! Lagta hai aaj brake ki jagah accelerator par fevicol chipka kar aaye hain!"},
+                    {"note": "Stealth alarm fail", "dialogue": "Plan tha bilkul silent ninja banke ghusne ka, par bhai ne entry karte hi galti se horn aur siren dono baja diye!"},
+                    {"note": "Wrong weapon wheel", "dialogue": "Saamne poori gang khadi hai aur bhai ne gun nikalne ki jagah torch nikal kar unki aankhon me light maar di! Wah kya pro move hai!"},
+                    {"note": "GPS route disaster", "dialogue": "GPS bechara cheekh-cheekh kar bol raha tha left mudo, aur bhai seedha right me divider par gaadi chadha kar ulte latak gaye!"},
+                    {"note": "Crew left behind", "dialogue": "Team bol rahi thi sab saath chalenge, par bhai akele bhag gaye aur bechare teammates piche paidal daudte reh gaye!"},
+                    {"note": "Camera spotted comedy", "dialogue": "CCTV camera ke bilkul saamne naach kar bhai bol rahe hain kisi ne mujhe dekha hi nahi! Agle hi second poora alarm baj gaya!"},
+                ],
+                "act2": [
+                    {"act": "Act II: Rocket Comedy", "note": "Rocket hits lamp post", "dialogue": "Rocket launcher nikala police ko udane ke liye, par missile samne wale khambe se takra gayi aur bhai khud hawa me astronaut ban gaye!"},
+                    {"act": "Act II: 5-Star Panic", "note": "Total panic driving", "dialogue": "5-Star lagte hi bhai ke haath kaanpne lage — gaadi aage kam aur footpath par zyada chal rahi hai! Police bhi bol rahi hai isko pakdo pehle!"},
+                    {"act": "Act II: Bridge Fail", "note": "Car flips into canal", "dialogue": "Bhai ne bola ab dekho world record stunt, aur agle hi pal mehangi supercar seedha gande naale me chhapaak! Paisa barbad!"},
+                    {"act": "Act II: Chopper Chaos", "note": "Running in circles", "dialogue": "Upar se police helicopter goliyan barsa raha hai aur bhai road ke beech me gol-gol chakkar kaat kar dance kar rahe hain!"},
+                    {"act": "Act II: Greedy Loot", "note": "Refusing to leave vault", "dialogue": "Chaaro taraf SWAT ghus chuki hai, par bhai ko ek-ek sikka uthana hai! Jaan jaye par ek rupya bhi chhootna nahi chahiye!"},
+                    {"act": "Act II: Blockade Crash", "note": "Driving straight into trucks", "dialogue": "Saamne police ne 6 trucks ka blockade lagaya aur bhai ne socha main Superman hoon — bina brake mare seedha andar ghusa diya!"},
+                    {"act": "Act II: Parachute Panic", "note": "Forgetting parachute button", "dialogue": "Building se hero style me kood toh gaye, par hawa me yaad aaya ki parachute kholne wala button kaunsa hai! Kya scene tha bhai!"},
+                    {"act": "Act II: NPC Karma", "note": "Civilian ruins escape", "dialogue": "Sab kuch theek chal raha tha tabhi ek random uncle ne apni scooty laakar bhai ki supercar ulat di! GTA ka karma kabhi maaf nahi karta!"},
+                    {"act": "Act II: Sparking Rims", "note": "Driving with zero tires", "dialogue": "Gaadi ke chaaro tyre gayab ho chuke hain, neeche se fuljhadiyan nikal rahi hain, par bhai bol rahe hain abhi toh gaadi bilkul nayi hai!"},
+                    {"act": "Act II: Chain Blast", "note": "Accidental petrol pump blast", "dialogue": "Ek goli galti se petrol pump par lag gayi aur bina Diwali ke hi poora Los Santos roshan ho gaya! Bhai screen se hi gayab ho gaye!"},
+                    {"act": "Act II: Alley Jam", "note": "Stuck sideways in alley", "dialogue": "Shortcut ke chakkar me gaadi patli gali me aisi phansi ki ab na aage ja rahi hai na piche — bhai bas gusse me horn baja rahe hain!"},
+                    {"act": "Act II: 1 HP Miracle", "note": "Surviving on 1 HP", "dialogue": "Health bar dekho dosto, microscope se bhi nahi dikh rahi! Ek machhar bhi kaat leta toh mission wahin khatam ho jata!"},
+                ],
+                "act3": [
+                    {"note": "Accidental pro drift", "dialogue": "Galti se handbrake dab gaya aur aisi khatarnak drift lagi ki police ki chaar gaadiyan aapas me hi takra kar phat gayi!"},
+                    {"note": "Lucky tunnel dive", "dialogue": "Control khokar gaadi seedha metro tunnel me gir gayi aur kismat dekho, wahi escape route nikal aaya! Isko kehte hain pure luck!"},
+                    {"note": "Last second survival", "dialogue": "Engine me aag lagi hui thi, sirf 3 second bache the aur dhakka maar kar aakhirkaar safehouse ke gate tak pahunch hi gaye!"},
+                    {"note": "Comedy victory dance", "dialogue": "Itni saari bezatti aur 50 takkaron ke baad bhi mission pass likha aa gaya! Police abhi bhi soch rahi hai yeh hua kya!"},
+                ],
+                "outro": "Bhai has-has ke pet dard ho gaya! Aapko sabse zyada funny blunder kaunsa laga, comment me zaroor batana aur video ko like thok do!",
             }
 
         if "documentary" in s:

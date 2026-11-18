@@ -1,10 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { Youtube, Sparkles, Clock, ArrowRight, Wand2, Mic } from "lucide-react";
+import { Youtube, Sparkles, Clock, ArrowRight, Wand2, Mic, Gauge } from "lucide-react";
 
 interface InputConfigBarProps {
-  onGenerate: (url: string, targetMinutes: number, storyStyle: string, voiceSpeaker: string) => void;
+  onGenerate: (
+    url: string,
+    targetMinutes: number,
+    storyStyle: string,
+    voiceSpeaker: string,
+    playbackSpeed: number
+  ) => void;
   isProcessing: boolean;
 }
 
@@ -17,8 +23,17 @@ const LENGTHS = [
   { value: 30, label: "30 Min" },
 ];
 
+const SPEEDS = [
+  { value: 1.0, label: "1x" },
+  { value: 1.25, label: "1.25x" },
+  { value: 1.5, label: "1.5x" },
+  { value: 1.75, label: "1.75x" },
+  { value: 2.0, label: "2x" },
+];
+
 const STYLES = [
-  "Funny + Facts",
+  "Funny Storytelling",
+  "Facts Storytelling",
   "Documentary Storytelling",
   "Mystery & Suspense Storytelling",
   "Investigative Storytelling",
@@ -53,7 +68,8 @@ const REAL_DEMO_URL = "https://www.youtube.com/watch?v=RbVGCHFf0ZY";
 export default function InputConfigBar({ onGenerate, isProcessing }: InputConfigBarProps) {
   const [url, setUrl] = useState(REAL_DEMO_URL);
   const [targetMinutes, setTargetMinutes] = useState(5);
-  const [storyStyle, setStoryStyle] = useState("Funny + Facts");
+  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
+  const [storyStyle, setStoryStyle] = useState("Funny Storytelling");
   const [voiceGender, setVoiceGender] = useState<"male" | "female">("male");
   const [voiceSpeaker, setVoiceSpeaker] = useState("shubh");
 
@@ -67,7 +83,7 @@ export default function InputConfigBar({ onGenerate, isProcessing }: InputConfig
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
-    onGenerate(url.trim(), targetMinutes, storyStyle, voiceSpeaker);
+    onGenerate(url.trim(), targetMinutes, storyStyle, voiceSpeaker, playbackSpeed);
   };
 
   return (
@@ -98,41 +114,72 @@ export default function InputConfigBar({ onGenerate, isProcessing }: InputConfig
           />
         </div>
 
-        {/* 1. Video Duration */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
-            1. Video Duration
-          </label>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {LENGTHS.map((item) => {
-              const isSelected = targetMinutes === item.value;
-              return (
-                <button
-                  key={item.value}
-                  type="button"
-                  onClick={() => setTargetMinutes(item.value)}
-                  disabled={isProcessing}
-                  className={`py-2 px-3 rounded-xl text-xs font-bold transition text-center border ${
-                    isSelected
-                      ? "bg-[#FF4655] text-white border-[#FF4655] shadow-lg shadow-[#FF4655]/20"
-                      : "bg-studio-950 border-studio-800 hover:border-studio-700 text-slate-300"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              );
-            })}
+        {/* Row 1: Duration + Render Speed */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* 1. Video Duration */}
+          <div className="lg:col-span-7 space-y-2">
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              1. Video Duration
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              {LENGTHS.map((item) => {
+                const isSelected = targetMinutes === item.value;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setTargetMinutes(item.value)}
+                    disabled={isProcessing}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold transition text-center border ${
+                      isSelected
+                        ? "bg-[#FF4655] text-white border-[#FF4655] shadow-lg shadow-[#FF4655]/20"
+                        : "bg-studio-950 border-studio-800 hover:border-studio-700 text-slate-300"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 2. Video & Voice Speed */}
+          <div className="lg:col-span-5 space-y-2">
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Gauge className="w-3.5 h-3.5 text-cyan-400" />
+              2. Video & Voice Speed
+            </label>
+            <div className="grid grid-cols-5 gap-2">
+              {SPEEDS.map((sp) => {
+                const isSelected = playbackSpeed === sp.value;
+                return (
+                  <button
+                    key={sp.value}
+                    type="button"
+                    onClick={() => setPlaybackSpeed(sp.value)}
+                    disabled={isProcessing}
+                    className={`py-2 px-2 rounded-xl text-xs font-bold transition text-center border font-mono ${
+                      isSelected
+                        ? "bg-cyan-500 text-black border-cyan-400 shadow-lg shadow-cyan-500/20"
+                        : "bg-studio-950 border-studio-800 hover:border-studio-700 text-slate-300"
+                    }`}
+                  >
+                    {sp.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        {/* 2. Storytelling Style */}
+        {/* 3. Storytelling Style (Funny & Facts separated!) */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-[#FF4655]" />
-            2. Storytelling Style
+            3. Storytelling Style
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {STYLES.map((style) => {
               const isSelected = storyStyle === style;
               return (
@@ -154,12 +201,12 @@ export default function InputConfigBar({ onGenerate, isProcessing }: InputConfig
           </div>
         </div>
 
-        {/* 3. Sarvam AI Indian Voice + Generate CTA */}
+        {/* 4. Sarvam AI Indian Voice + Generate CTA */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1 items-end">
           <div className="lg:col-span-7 space-y-2">
             <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <Mic className="w-3.5 h-3.5 text-purple-400" />
-              3. Sarvam AI Indian Voice
+              4. Sarvam AI Indian Voice
             </label>
             <div className="grid grid-cols-12 gap-2">
               <button
@@ -214,12 +261,12 @@ export default function InputConfigBar({ onGenerate, isProcessing }: InputConfig
               {isProcessing ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                  <span>Processing 1080p...</span>
+                  <span>Rendering {playbackSpeed}x HD...</span>
                 </>
               ) : (
                 <>
                   <Wand2 className="w-4 h-4" />
-                  <span>Generate Full HD Video</span>
+                  <span>Generate {playbackSpeed}x Full HD Video</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

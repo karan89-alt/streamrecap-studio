@@ -230,7 +230,7 @@ class YouTubeExtractor:
                 return str(out_path)
 
         clean_url = self._normalize_url(url)
-        clip_dur = max(4.0, min(14.0, float(end_sec - start_sec)))
+        clip_dur = max(4.0, min(30.0, float(end_sec - start_sec)))
         safe_start = max(0.0, min(float(start_sec), max(0.0, float(max_duration) - clip_dur - 2.0)))
 
         stream_pair = await self.get_direct_stream_url(clean_url)
@@ -238,7 +238,7 @@ class YouTubeExtractor:
             v_url, a_url = stream_pair
             try:
                 if a_url:
-                    # Dual-input DASH native 1080p video + stereo AAC audio (instant stream copy!)
+                    # Dual-input DASH native 1080p video + stereo AAC audio (reset audio PTS to 0.000!)
                     cmd_stream = [
                         settings.FFMPEG_PATH,
                         "-y",
@@ -258,6 +258,7 @@ class YouTubeExtractor:
                         "-map", "0:v:0",
                         "-map", "1:a:0",
                         "-c:v", "copy",
+                        "-af", "asetpts=PTS-STARTPTS",
                         "-c:a", "aac",
                         "-b:a", "128k",
                         "-shortest",

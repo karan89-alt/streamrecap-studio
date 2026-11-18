@@ -43,14 +43,15 @@ export default function HomePage() {
     url: string,
     targetMinutes: number,
     storyStyle: string,
-    voiceSpeaker: string
+    voiceSpeaker: string,
+    playbackSpeed: number
   ) => {
     stopTracking();
     setIsProcessing(true);
     setCurrentTime(0);
 
     try {
-      const res = await startRecap(url, targetMinutes, storyStyle, voiceSpeaker);
+      const res = await startRecap(url, targetMinutes, storyStyle, voiceSpeaker, playbackSpeed);
       const newJobId = res.job_id;
 
       setJob({
@@ -59,10 +60,11 @@ export default function HomePage() {
         target_minutes: targetMinutes,
         story_style: storyStyle,
         voice_speaker: voiceSpeaker,
+        playback_speed: playbackSpeed,
         status: "PROCESSING",
         stage: 1,
         progress: 8,
-        message: "Analyzing stream & preparing Sarvam AI voice...",
+        message: `Analyzing stream (${playbackSpeed}x mode)...`,
       });
 
       // Real-time SSE updates
@@ -166,7 +168,8 @@ export default function HomePage() {
                   job.url,
                   job.target_minutes,
                   job.story_style,
-                  job.voice_speaker || "shubh"
+                  job.voice_speaker || "shubh",
+                  job.playback_speed || 1.0
                 )
               }
               className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shrink-0"
@@ -188,7 +191,7 @@ export default function HomePage() {
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                   <span className="text-xs font-bold text-white uppercase tracking-wider">
-                    {job.story_style} • {job.target_minutes} Min • Sarvam AI ({job.voice_speaker || "Shubh"})
+                    {job.story_style} • {job.target_minutes} Min • {job.playback_speed || 1}x Speed • Sarvam AI ({job.voice_speaker || "Shubh"})
                   </span>
                 </div>
 
