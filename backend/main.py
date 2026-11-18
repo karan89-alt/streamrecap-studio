@@ -220,7 +220,7 @@ async def process_recap_pipeline(
         # Stage 3: Extract TRUE Native 1080p60 clips sized to (audio_dur * speed) + buffer!
         total_clips = len(active_segments)
         completed_downloads = 0
-        dl_sem = asyncio.Semaphore(5)
+        dl_sem = asyncio.Semaphore(2)
 
         await extractor.get_direct_stream_url(metadata.get("url", url))
 

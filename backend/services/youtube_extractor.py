@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -9,7 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 import yt_dlp
 
-from config import CLIPS_DIR, settings
+from config import CLIPS_DIR, TEMP_DIR, settings
 
 logger = logging.getLogger("streamrecap.extractor")
 
@@ -23,6 +25,19 @@ HD_FORMAT_SELECTOR = (
     "bestvideo[height<=1080]+bestaudio/"
     "best[height<=1080]/best"
 )
+
+
+def _get_cookie_args() -> List[str]:
+    """Optional documented yt-dlp --cookies support via YOUTUBE_COOKIES_B64 env var for cloud hosts."""
+    b64 = (os.environ.get("YOUTUBE_COOKIES_B64") or "").strip()
+    if not b64:
+        return []
+    cookie_file = TEMP_DIR / "yt_cookies.txt"
+    try:
+        cookie_file.write_bytes(base64.b64decode(b64))
+        return ["--cookies", str(cookie_file)]
+    except Exception:
+        return []
 
 
 class YouTubeExtractor:
@@ -110,21 +125,24 @@ class YouTubeExtractor:
                 if time.time() - ts < 1200:
                     return (v_url, a_url)
 
-            # Primary: Native 1080p60/1080p DASH via visionos client (bypasses datacenter web bot checks!)
+            cookie_args = _get_cookie_args()
+            # Primary: Native 1080p60/1080p DASH via visionos client
             cmd_hd_visionos = [
                 str(sys.executable), "-m", "yt_dlp",
                 "-g",
                 "--no-warnings",
+                *cookie_args,
                 "--extractor-args", "youtube:player_client=visionos",
                 "-f", HD_FORMAT_SELECTOR,
                 clean_url
             ]
 
-            # Secondary: Default client without JS runtime
+            # Secondary: Default client
             cmd_hd_default = [
                 str(sys.executable), "-m", "yt_dlp",
                 "-g",
                 "--no-warnings",
+                *cookie_args,
                 "-f", HD_FORMAT_SELECTOR,
                 clean_url
             ]
@@ -289,7 +307,7 @@ class YouTubeExtractor:
                     ]
 
                 def _run_ffmpeg():
-                    res = subprocess.run(cmd_stream, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=40)
+                    res = subprocess.run(cmd_stream, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90)
                     if res.returncode != 0:
                         self.last_debug = f"ff_rc={res.returncode}: {res.stderr.decode('utf-8', errors='ignore')[-220:]}"
                     return res.returncode
