@@ -62,3 +62,17 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Local .env takes priority over stale Windows/OS environment variables (e.g. old expired GEMINI_API_KEY).
+# On Railway/Docker, .env is excluded so cloud environment variables remain authoritative.
+_local_env = BASE_DIR / ".env"
+if _local_env.exists():
+    for _raw_line in _local_env.read_text(encoding="utf-8").splitlines():
+        _line = _raw_line.strip()
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _v = _line.split("=", 1)
+        _k = _k.strip()
+        _v = _v.strip().strip('"').strip("'")
+        if _v and hasattr(settings, _k):
+            setattr(settings, _k, _v)

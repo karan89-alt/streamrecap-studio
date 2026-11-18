@@ -2,6 +2,7 @@ import { JobState, ScriptSegment } from "../types/recap";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://streamrecap-studio-production.up.railway.app";
 const SARVAM_KEY = process.env.NEXT_PUBLIC_SARVAM_API_KEY || "";
+const GEMINI_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 
 export async function checkBackendHealth() {
   try {
@@ -22,6 +23,9 @@ export async function startRecap(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (SARVAM_KEY) {
     headers["X-Sarvam-Key"] = SARVAM_KEY;
+  }
+  if (GEMINI_KEY) {
+    headers["X-Gemini-Key"] = GEMINI_KEY;
   }
 
   const res = await fetch(`${API_BASE}/api/recap/generate`, {

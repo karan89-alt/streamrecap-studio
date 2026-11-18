@@ -30,8 +30,8 @@ logger = logging.getLogger("streamrecap.api")
 
 app = FastAPI(
     title="StreamRecap Studio API",
-    description="Audio-driven Full HD gaming recap studio powered by Sarvam AI Indian TTS & 1080p60 stream editing",
-    version="3.1.0"
+    description="Vision-first Full HD recap studio: watches every clip with Gemini Vision before scripting & Sarvam AI Indian TTS",
+    version="4.0.0",
 )
 
 app.add_middleware(
@@ -51,7 +51,6 @@ RENDER_SEMAPHORE = asyncio.Semaphore(1)
 extractor = YouTubeExtractor()
 director = AIDirector()
 voice_mixer = VoiceMixer()
-
 
 ALLOWED_SPEEDS = [1.0, 1.25, 1.5, 1.75, 2.0]
 
@@ -106,7 +105,7 @@ async def notify_job_update(job_id: str, stage_num: int, progress: int, message:
         "stage": stage_num,
         "progress": progress,
         "message": message,
-        **extra
+        **extra,
     }
 
     if job_id in JOB_EVENT_QUEUES:
@@ -114,7 +113,7 @@ async def notify_job_update(job_id: str, stage_num: int, progress: int, message:
             await q.put(json.dumps(payload))
 
 
-# --- Audio-Driven Background Pipeline ---
+# --- Vision-First Background Pipeline (v4.0.0) ---
 async def process_recap_pipeline(
     job_id: str,
     url: str,
@@ -122,7 +121,8 @@ async def process_recap_pipeline(
     story_style: str,
     voice_speaker: str,
     playback_speed: float = 1.0,
-    sarvam_key: Optional[str] = None
+    sarvam_key: Optional[str] = None,
+    gemini_key: Optional[str] = None,
 ):
     try:
         target_minutes = max(1, min(30, int(target_minutes)))
@@ -130,67 +130,167 @@ async def process_recap_pipeline(
         speed = _normalize_speed(playback_speed)
         speed_label = f"{speed:g}x"
 
-        # Stage 1: Analyze YouTube stream
+        # =====================================================================
+        # STAGE 1: Analyze Full Video Metadata + Real Transcript + Plan Clips
+        # =====================================================================
         await notify_job_update(
             job_id,
             stage_num=1,
-            progress=8,
-            message=f"Analyzing YouTube stream ({speed_label} mode)..."
+            progress=6,
+            message=f"Reading full video info & captions ({speed_label} mode)...",
         )
 
         metadata = await extractor.get_stream_metadata(url)
-        stream_duration = float(metadata.get("duration") or 3000)
-        hype_spikes = await extractor.detect_hype_spikes(metadata, target_minutes)
+        stream_duration = float(metadata.get("duration") or 1800)
+        planned_intervals = await extractor.plan_clip_intervals(
+            metadata=metadata,
+            target_minutes=target_minutes,
+            playback_speed=speed,
+        )
+
+        public_meta = {k: v for k, v in metadata.items() if k != "transcript"}
+        public_meta["transcript_lines"] = len(metadata.get("transcript") or [])
 
         await notify_job_update(
             job_id,
             stage_num=1,
-            progress=18,
-            message=f"Stream loaded: {metadata.get('title', 'Gaming Stream')[:45]}",
-            metadata=metadata
+            progress=14,
+            message=(
+                f"Loaded: {metadata.get('title', 'YouTube Video')[:42]} "
+                f"({len(planned_intervals)} clips planned)"
+            ),
+            metadata=public_meta,
         )
 
-        # Stage 2a: Write rich Hindi script scaled to selected speed so audio fills full duration
+        # =====================================================================
+        # STAGE 2: Cut 1080p Clips FIRST & Extract Visual Frames for AI Vision
+        # =====================================================================
         await notify_job_update(
             job_id,
             stage_num=2,
-            progress=24,
-            message=f"Writing {story_style} script for {speed_label} speed..."
+            progress=16,
+            message=f"Cutting {len(planned_intervals)} Full HD clips across full video...",
         )
 
-        script_buffer_minutes = max(target_minutes + 1, int(round(target_minutes * speed * 1.25)))
-        raw_script_segments = await director.create_story_and_script(
+        await extractor.get_direct_stream_url(metadata.get("url", url))
+
+        total_planned = len(planned_intervals)
+        completed_cuts = 0
+        dl_sem = asyncio.Semaphore(4)
+
+        async def _cut_and_snap(interval: Dict[str, Any]):
+            nonlocal completed_cuts
+            c_idx = int(interval["clip_index"])
+            clip_filename = f"clip_{job_id}_{c_idx:03d}.mp4"
+            async with dl_sem:
+                clip_path = await extractor.download_section(
+                    url=metadata.get("url", url),
+                    start_sec=float(interval["vod_start"]),
+                    end_sec=float(interval["vod_end"]),
+                    output_filename=clip_filename,
+                    max_duration=stream_duration,
+                )
+                frame_b64 = None
+                real_dur = 0.0
+                if clip_path and Path(clip_path).exists() and Path(clip_path).stat().st_size > 10000:
+                    real_dur = await extractor.get_clip_duration(clip_path)
+                    frame_b64 = await extractor.extract_clip_frame_b64(clip_path)
+
+                completed_cuts += 1
+                await notify_job_update(
+                    job_id,
+                    stage_num=2,
+                    progress=16 + int((completed_cuts / max(1, total_planned)) * 34),
+                    message=f"Cut 1080p clip {completed_cuts}/{total_planned} & captured frame...",
+                )
+                return {
+                    **interval,
+                    "clip_path": clip_path,
+                    "real_clip_dur": real_dur,
+                    "frame_b64": frame_b64,
+                }
+
+        cut_results = await asyncio.gather(*[_cut_and_snap(iv) for iv in planned_intervals])
+        cut_results.sort(key=lambda x: int(x["clip_index"]))
+
+        valid_clips = [
+            c
+            for c in cut_results
+            if c.get("clip_path")
+            and Path(c["clip_path"]).exists()
+            and Path(c["clip_path"]).stat().st_size > 10000
+        ]
+        if not valid_clips:
+            raise RuntimeError(
+                f"Could not extract 1080p clips from this YouTube URL. ({extractor.last_debug[:180]})"
+            )
+
+        # Re-index cleanly 0..N-1 for vision batching
+        for new_idx, c in enumerate(valid_clips):
+            c["clip_index"] = new_idx
+
+        # =====================================================================
+        # STAGE 3a: Gemini Vision WATCHES Every Cut Clip -> Writes Real Script
+        # =====================================================================
+        await notify_job_update(
+            job_id,
+            stage_num=3,
+            progress=52,
+            message=f"AI watching all {len(valid_clips)} clips & writing {story_style} script...",
+        )
+
+        async def _on_vision_progress(done_batches: int, total_batches: int):
+            pct = 52 + int((done_batches / max(1, total_batches)) * 12)
+            await notify_job_update(
+                job_id,
+                stage_num=3,
+                progress=pct,
+                message=f"AI analyzed clip batch {done_batches}/{total_batches} ({story_style})...",
+            )
+
+        vision_out = await director.write_vision_script_from_clips(
             stream_meta=metadata,
-            hype_spikes=hype_spikes,
-            target_minutes=script_buffer_minutes,
-            story_style=story_style
+            clip_infos=valid_clips,
+            story_style=story_style,
+            playback_speed=speed,
+            gemini_key=gemini_key,
+            progress_callback=_on_vision_progress,
         )
+        vision_segments = vision_out["segments"]
+        vision_used = bool(vision_out.get("vision_used"))
+        script_engine = str(vision_out.get("engine", "unknown"))
 
-        # Stage 2b: Synthesize Sarvam AI (bulbul:v3) Indian Voice at EXACT selected speed!
+        # Free base64 frames from memory immediately after Gemini Vision finishes
+        for c in valid_clips:
+            c.pop("frame_b64", None)
+
+        # =====================================================================
+        # STAGE 3b: Sarvam AI (bulbul:v3) Synthesizes Voice at EXACT Speed
+        # =====================================================================
         await notify_job_update(
             job_id,
-            stage_num=2,
-            progress=30,
-            message=f"Generating Sarvam AI voice ({voice_speaker.title()} @ {speed_label})..."
+            stage_num=3,
+            progress=66,
+            message=f"Generating Sarvam AI voice ({voice_speaker.title()} @ {speed_label})...",
         )
 
         async def _on_tts_progress(done: int, total: int):
-            pct = 30 + int((done / max(1, total)) * 20)
+            pct = 66 + int((done / max(1, total)) * 18)
             await notify_job_update(
                 job_id,
-                stage_num=2,
+                stage_num=3,
                 progress=pct,
-                message=f"Sarvam AI ({voice_speaker.title()} @ {speed_label}): {done}/{total} lines..."
+                message=f"Sarvam AI ({voice_speaker.title()} @ {speed_label}): {done}/{total} clips voiced...",
             )
 
         sarvam_result = await voice_mixer.synthesize_sarvam_audio_timeline(
-            script_segments=raw_script_segments,
+            script_segments=vision_segments,
             speaker=voice_speaker,
             job_id=job_id,
             target_seconds=target_seconds,
             playback_speed=speed,
             api_key=sarvam_key,
-            progress_callback=_on_tts_progress
+            progress_callback=_on_tts_progress,
         )
 
         master_voice_path: Optional[str] = None
@@ -198,81 +298,27 @@ async def process_recap_pipeline(
             active_segments = sarvam_result["segments"]
             master_voice_path = sarvam_result["master_voice_path"]
             audio_total_fmt = _fmt_mmss(sarvam_result["total_duration"])
-            await notify_job_update(
-                job_id,
-                stage_num=3,
-                progress=52,
-                message=f"Sarvam AI {speed_label} audio ready ({audio_total_fmt})! Cutting 1080p clips...",
-                segments=active_segments
-            )
+            logger.info(f"Sarvam AI voice ready: {audio_total_fmt} across {len(active_segments)} clips")
         else:
-            active_segments = raw_script_segments[: max(6, round(target_seconds / 10))]
+            active_segments = vision_segments
             for seg in active_segments:
                 seg["source_duration"] = round(float(seg["duration"]) * speed, 3)
-            await notify_job_update(
-                job_id,
-                stage_num=3,
-                progress=52,
-                message=f"Extracting 1080p clips for {speed_label} render...",
-                segments=active_segments
-            )
 
-        # Stage 3: Extract TRUE Native 1080p60 clips sized to (audio_dur * speed) + buffer!
-        total_clips = len(active_segments)
-        completed_downloads = 0
-        dl_sem = asyncio.Semaphore(2)
-
-        await extractor.get_direct_stream_url(metadata.get("url", url))
-
-        async def _download_one(idx: int, seg: Dict[str, Any]):
-            nonlocal completed_downloads
-            clip_filename = f"clip_{job_id}_{idx:03d}.mp4"
-            req_start = float(seg["vod_start"])
-            needed_src = float(seg.get("source_duration") or (float(seg["duration"]) * speed))
-            req_dur = needed_src + 3.0
-            async with dl_sem:
-                clip_path = await extractor.download_section(
-                    url=metadata.get("url", url),
-                    start_sec=req_start,
-                    end_sec=req_start + req_dur,
-                    output_filename=clip_filename,
-                    max_duration=stream_duration
-                )
-                completed_downloads += 1
-                await notify_job_update(
-                    job_id,
-                    stage_num=3,
-                    progress=52 + int((completed_downloads / max(1, total_clips)) * 30),
-                    message=f"Cutting 1080p clip {completed_downloads}/{total_clips} ({speed_label})..."
-                )
-                return idx, clip_path
-
-        tasks = [_download_one(idx, seg) for idx, seg in enumerate(active_segments)]
-        results = await asyncio.gather(*tasks)
-        results.sort(key=lambda x: x[0])
-
-        valid_clip_entries = []
-        valid_clip_paths_only = []
-        for idx, clip_path in results:
-            if clip_path and Path(clip_path).exists() and Path(clip_path).stat().st_size > 10000:
-                valid_clip_paths_only.append(clip_path)
-            valid_clip_entries.append((idx, clip_path))
-
-        if not valid_clip_paths_only:
-            raise RuntimeError(
-                f"Could not extract 1080p clips from this YouTube URL. ({extractor.last_debug[:180]})"
-            )
-
-        # Build exact concat list: outpoint = (audio_dur * speed), so after setpts=PTS/speed
-        # every single video clip equals EXACT audio_dur to the millisecond!
+        # =====================================================================
+        # STAGE 4: Speed-Exact Audio-Synced 1080p Full HD Render & Captions
+        # =====================================================================
         concat_txt = TEMP_DIR / f"concat_audio_sync_{job_id}.txt"
         final_segments: List[Dict[str, Any]] = []
         running_t = 0.0
+        fallback_clip_paths = [c["clip_path"] for c in valid_clips]
 
         with open(concat_txt, "w", encoding="utf-8") as cf:
-            for idx, clip_path in valid_clip_entries:
-                seg = dict(active_segments[idx])
-                chosen_path = clip_path if (clip_path and Path(clip_path).exists()) else valid_clip_paths_only[idx % len(valid_clip_paths_only)]
+            for idx, raw_seg in enumerate(active_segments):
+                seg = dict(raw_seg)
+                chosen_path = seg.pop("clip_path", "")
+                if not chosen_path or not Path(chosen_path).exists():
+                    chosen_path = fallback_clip_paths[idx % len(fallback_clip_paths)]
+
                 real_clip_dur = await extractor.get_clip_duration(chosen_path)
                 desired_final_dur = float(seg["duration"])
                 desired_src_dur = float(seg.get("source_duration") or (desired_final_dur * speed))
@@ -300,19 +346,18 @@ async def process_recap_pipeline(
         with open(script_file, "w", encoding="utf-8") as f:
             json.dump(final_segments, f, indent=2, ensure_ascii=False)
 
-        # Stage 4: Single-pass TRUE 1080p Render at EXACT speed (Video + Sarvam Voice + Game Audio + Captions)
         async with RENDER_SEMAPHORE:
             await notify_job_update(
                 job_id,
                 stage_num=4,
                 progress=88,
-                message=f"Rendering 1080p Full HD at {speed_label} with Sarvam AI voice & captions...",
-                segments=final_segments
+                message=f"Rendering 1080p Full HD at {speed_label} with Sarvam voice & captions...",
+                segments=final_segments,
             )
 
             subtitle_files = voice_mixer.generate_viral_subtitles(
                 script_segments=final_segments,
-                job_id=job_id
+                job_id=job_id,
             )
 
             final_filename = f"final_recap_{job_id}.mp4"
@@ -324,7 +369,7 @@ async def process_recap_pipeline(
                 output_filename=final_filename,
                 master_voice_path=master_voice_path,
                 game_audio_filename=game_audio_filename,
-                playback_speed=speed
+                playback_speed=speed,
             )
 
         final_url = f"/storage/exports/{final_filename}"
@@ -332,6 +377,10 @@ async def process_recap_pipeline(
         srt_url = f"/storage/exports/subtitles_{job_id}.srt"
 
         _cleanup_job_temp_files(job_id)
+
+        render_info = dict(voice_mixer.last_render_info)
+        render_info["vision_enabled"] = vision_used
+        render_info["script_engine"] = script_engine
 
         await notify_job_update(
             job_id,
@@ -345,9 +394,11 @@ async def process_recap_pipeline(
             srt_url=srt_url,
             voice_speaker=voice_speaker,
             playback_speed=speed,
+            vision_enabled=vision_used,
+            script_engine=script_engine,
             segments=final_segments,
-            metadata=metadata,
-            render_info=voice_mixer.last_render_info
+            metadata=public_meta,
+            render_info=render_info,
         )
 
     except Exception as e:
@@ -359,7 +410,7 @@ async def process_recap_pipeline(
             progress=0,
             message=f"Failed: {str(e)}",
             status="FAILED",
-            error=str(e)
+            error=str(e),
         )
 
 
@@ -368,12 +419,13 @@ async def process_recap_pipeline(
 async def health_check():
     return {
         "status": "healthy",
-        "version": "3.1.0",
+        "version": "4.0.0",
+        "vision_engine": "gemini-3.1-flash-lite-preview",
         "tts_engine": "sarvam-bulbul-v3",
         "supported_speeds": ALLOWED_SPEEDS,
         "ffmpeg": settings.FFMPEG_PATH,
         "ffmpeg_detected": Path(settings.FFMPEG_PATH).exists() or bool(settings.FFMPEG_PATH),
-        "active_jobs_count": sum(1 for j in JOBS.values() if j.get("status") == "PROCESSING")
+        "active_jobs_count": sum(1 for j in JOBS.values() if j.get("status") == "PROCESSING"),
     }
 
 
@@ -386,7 +438,8 @@ async def list_sarvam_voices():
 async def start_recap_job(
     req: CreateRecapRequest,
     background_tasks: BackgroundTasks,
-    x_sarvam_key: Optional[str] = Header(default=None, alias="X-Sarvam-Key")
+    x_sarvam_key: Optional[str] = Header(default=None, alias="X-Sarvam-Key"),
+    x_gemini_key: Optional[str] = Header(default=None, alias="X-Gemini-Key"),
 ):
     job_id = str(uuid.uuid4())[:8]
     speed = _normalize_speed(req.playback_speed)
@@ -400,8 +453,8 @@ async def start_recap_job(
         "playback_speed": speed,
         "status": "PROCESSING",
         "stage": 1,
-        "progress": 5,
-        "message": f"Initializing Sarvam AI studio ({speed:g}x speed)...",
+        "progress": 4,
+        "message": f"Starting Vision-First AI Studio ({speed:g}x speed)...",
         "created_at": asyncio.get_event_loop().time(),
     }
     JOB_EVENT_QUEUES[job_id] = []
@@ -414,7 +467,8 @@ async def start_recap_job(
         story_style=req.story_style,
         voice_speaker=req.voice_speaker,
         playback_speed=speed,
-        sarvam_key=x_sarvam_key or settings.SARVAM_API_KEY
+        sarvam_key=x_sarvam_key or settings.SARVAM_API_KEY,
+        gemini_key=x_gemini_key or settings.GEMINI_API_KEY,
     )
 
     return {"job_id": job_id, "status": "QUEUED", "playback_speed": speed}
@@ -489,7 +543,7 @@ async def update_script(job_id: str, req: UpdateScriptRequest):
 async def record_user_voiceover(
     job_id: str,
     audio_file: UploadFile = File(...),
-    game_volume: float = Form(0.15)
+    game_volume: float = Form(0.15),
 ):
     if job_id not in JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -510,7 +564,7 @@ async def record_user_voiceover(
             stitched_video_path=str(base_video),
             user_voice_path=str(user_audio_path),
             output_filename=final_filename,
-            game_volume=game_volume
+            game_volume=game_volume,
         )
 
     final_url = f"/storage/exports/{final_filename}"
@@ -520,5 +574,5 @@ async def record_user_voiceover(
     return {
         "status": "SUCCESS",
         "final_video_url": final_url,
-        "message": "Voiceover mixed successfully!"
+        "message": "Voiceover mixed successfully!",
     }

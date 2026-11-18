@@ -9,10 +9,10 @@ interface PipelineTrackerProps {
 }
 
 const STAGES = [
-  { stage: 1, title: "Stream Analysis" },
-  { stage: 2, title: "Script & Sarvam AI Voice" },
-  { stage: 3, title: "1080p Audio-Synced Cuts" },
-  { stage: 4, title: "Full HD Render & Captions" },
+  { stage: 1, title: "Full Video & Transcript" },
+  { stage: 2, title: "Cutting 1080p Clips" },
+  { stage: 3, title: "AI Watching Clips & Voice" },
+  { stage: 4, title: "1080p Render & Captions" },
 ];
 
 export default function PipelineTracker({ job }: PipelineTrackerProps) {
