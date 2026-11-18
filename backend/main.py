@@ -291,7 +291,8 @@ async def process_recap_pipeline(job_id: str, url: str, target_minutes: int, sto
             game_audio_video_url=stitched_url,
             srt_url=srt_url,
             segments=synced_segments,
-            metadata=metadata
+            metadata=metadata,
+            render_info=voice_mixer.last_render_info
         )
 
     except Exception as e:
