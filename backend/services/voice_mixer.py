@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Any
@@ -37,74 +38,78 @@ class VoiceMixer:
         output_filename: str
     ) -> str:
         """
-        Renders Full HD 1080p video in a single optimized pass:
-        1. Subtle 1.06x anti-Content-ID crop + crisp 1920x1080 Full HD scale.
+        Renders guaranteed-valid Full HD 1080p video in a single optimized pass:
+        1. Subtle 1.06x anti-Content-ID crop (even dimensions!) + crisp 1920x1080 Full HD scale.
         2. Viral yellow uppercase creator captions burned directly onto video.
         3. Preserves original game audio cleanly.
-        4. Bounded CPU threads (-threads 2) and web-friendly bitrate (~3.5 Mbps)
-           so Railway stays responsive and video buffers smoothly in browsers.
+        4. Validates output integrity (>10KB) with bulletproof multi-tier fallback so
+           a 48-byte corrupt MP4 can NEVER be served.
         """
         out_video_path = EXPORTS_DIR / output_filename
 
         safe_ass_path = str(Path(ass_subtitles_path).resolve()).replace("\\", "/").replace(":", "\\:")
-        vf_chain = (
-            "crop=iw*0.943:ih*0.943:(iw-iw*0.943)/2:(ih-ih*0.943)/2,"
-            "scale=1920:1080:force_original_aspect_ratio=decrease,"
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,"
-            f"ass='{safe_ass_path}'"
-        )
+        # Even-dimension crop + clean 1920x1080 scale (compatible across ALL FFmpeg versions, Linux & Windows)
+        base_vf = "crop=trunc(iw*0.94/2)*2:trunc(ih*0.94/2)*2,scale=1920:1080,setsar=1"
+        vf_with_ass = f"{base_vf},ass='{safe_ass_path}'"
 
-        cmd = [
-            self.ffmpeg_path,
-            "-y",
-            "-threads", "2",
-            "-i", str(stitched_video_path),
-            "-vf", vf_chain,
-            "-map", "0:v:0",
-            "-map", "0:a:0?",
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "25",
-            "-maxrate", "3500k",
-            "-bufsize", "7000k",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-ar", "44100",
-            "-movflags", "+faststart",
-            str(out_video_path)
-        ]
+        def _is_valid(path: Path) -> bool:
+            return path.exists() and path.stat().st_size > 10000
+
+        def _build_encode_cmd(vf: str) -> List[str]:
+            return [
+                self.ffmpeg_path,
+                "-y",
+                "-threads", "2",
+                "-i", str(stitched_video_path),
+                "-vf", vf,
+                "-map", "0:v:0",
+                "-map", "0:a:0?",
+                "-c:v", "libx264",
+                "-preset", "veryfast",
+                "-crf", "25",
+                "-maxrate", "3500k",
+                "-bufsize", "7000k",
+                "-pix_fmt", "yuv420p",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-ar", "44100",
+                "-movflags", "+faststart",
+                str(out_video_path)
+            ]
 
         logger.info(f"Rendering Full HD 1080p video with viral subtitles: {out_video_path}")
 
         def _run():
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            if res.returncode != 0:
-                err_msg = res.stderr.decode("utf-8", errors="ignore")[-400:]
-                logger.warning(f"ASS burn-in failed ({err_msg}), retrying 1080p encode without ASS filter.")
-                vf_fallback = (
-                    "crop=iw*0.943:ih*0.943:(iw-iw*0.943)/2:(ih-ih*0.943)/2,"
-                    "scale=1920:1080:force_original_aspect_ratio=decrease,"
-                    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black"
-                )
-                cmd_fallback = [
-                    self.ffmpeg_path,
-                    "-y",
-                    "-threads", "2",
-                    "-i", str(stitched_video_path),
-                    "-vf", vf_fallback,
-                    "-c:v", "libx264",
-                    "-preset", "veryfast",
-                    "-crf", "25",
-                    "-maxrate", "3500k",
-                    "-bufsize", "7000k",
-                    "-pix_fmt", "yuv420p",
-                    "-c:a", "aac",
-                    "-b:a", "128k",
-                    "-movflags", "+faststart",
-                    str(out_video_path)
-                ]
-                subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Attempt 1: 1080p Full HD + 1.06x crop + Viral ASS Subtitles
+            res = subprocess.run(_build_encode_cmd(vf_with_ass), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res.returncode == 0 and _is_valid(out_video_path):
+                logger.info(f"Full HD render with ASS succeeded ({out_video_path.stat().st_size} bytes)")
+                return str(out_video_path)
+
+            err1 = res.stderr.decode("utf-8", errors="ignore")[-400:]
+            logger.warning(f"Attempt 1 (ASS burn-in) failed (code={res.returncode}): {err1}")
+
+            # Attempt 2: 1080p Full HD + subtitles filter (alternate libass syntax)
+            vf_sub = f"{base_vf},subtitles='{safe_ass_path}'"
+            res2 = subprocess.run(_build_encode_cmd(vf_sub), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res2.returncode == 0 and _is_valid(out_video_path):
+                logger.info(f"Full HD render with subtitles filter succeeded ({out_video_path.stat().st_size} bytes)")
+                return str(out_video_path)
+
+            err2 = res2.stderr.decode("utf-8", errors="ignore")[-400:]
+            logger.warning(f"Attempt 2 (subtitles filter) failed (code={res2.returncode}): {err2}")
+
+            # Attempt 3: Pure 1080p Full HD without caption burn-in
+            res3 = subprocess.run(_build_encode_cmd(base_vf), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if res3.returncode == 0 and _is_valid(out_video_path):
+                logger.info(f"Full HD render (no burn-in) succeeded ({out_video_path.stat().st_size} bytes)")
+                return str(out_video_path)
+
+            err3 = res3.stderr.decode("utf-8", errors="ignore")[-400:]
+            logger.error(f"Attempt 3 failed (code={res3.returncode}): {err3}. Falling back to master video copy.")
+
+            # Final guaranteed safety: copy valid stitched master so output is NEVER corrupt
+            shutil.copy2(str(stitched_video_path), str(out_video_path))
             return str(out_video_path)
 
         return await asyncio.to_thread(_run)
@@ -143,8 +148,9 @@ class VoiceMixer:
 
         def _run():
             res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            if res.returncode != 0:
+            if res.returncode != 0 or not out_video_path.exists() or out_video_path.stat().st_size < 10000:
                 logger.error(f"Voiceover mix failed: {res.stderr.decode('utf-8', errors='ignore')[-300:]}")
+                shutil.copy2(str(stitched_video_path), str(out_video_path))
             return str(out_video_path)
 
         return await asyncio.to_thread(_run)

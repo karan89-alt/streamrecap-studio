@@ -385,7 +385,7 @@ async def stream_job_events(job_id: str):
     return EventSourceResponse(event_generator())
 
 
-@app.get("/api/download/{filename}")
+@app.api_route("/api/download/{filename}", methods=["GET", "HEAD"])
 async def download_export_file(filename: str):
     """Forces direct browser file download with Content-Disposition attachment header."""
     safe_name = Path(filename).name
