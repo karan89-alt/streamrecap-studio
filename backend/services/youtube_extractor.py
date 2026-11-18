@@ -24,9 +24,6 @@ HD_FORMAT_SELECTOR = (
     "best[height<=1080]/best"
 )
 
-NODE_PATH = shutil.which("node") or shutil.which("nodejs")
-JS_RUNTIME_ARGS = ["--js-runtimes", f"node:{NODE_PATH}"] if NODE_PATH else []
-
 
 class YouTubeExtractor:
     def __init__(self):
@@ -112,12 +109,21 @@ class YouTubeExtractor:
                 if time.time() - ts < 1200:
                     return (v_url, a_url)
 
-            # Primary: Native 1080p60/1080p DASH video + M4A audio (9x sharper than 360p!)
-            cmd_hd = [
+            # Primary: Native 1080p60/1080p DASH via visionos client (bypasses datacenter web bot checks!)
+            cmd_hd_visionos = [
                 str(sys.executable), "-m", "yt_dlp",
                 "-g",
                 "--no-warnings",
-                *JS_RUNTIME_ARGS,
+                "--extractor-args", "youtube:player_client=visionos",
+                "-f", HD_FORMAT_SELECTOR,
+                clean_url
+            ]
+
+            # Secondary: Default client without JS runtime
+            cmd_hd_default = [
+                str(sys.executable), "-m", "yt_dlp",
+                "-g",
+                "--no-warnings",
                 "-f", HD_FORMAT_SELECTOR,
                 clean_url
             ]
@@ -133,23 +139,24 @@ class YouTubeExtractor:
                 logger.warning(f"yt-dlp -g stderr: {res.stderr[:250]}")
                 return None
 
-            try:
-                pair = await asyncio.to_thread(_fetch, cmd_hd)
-                if pair:
-                    self._direct_url_cache[clean_url] = (pair[0], pair[1], time.time())
-                    logger.info(
-                        f"Cached TRUE HD stream ({'DASH 1080p+Audio' if pair[1] else 'Single'}) for {clean_url}"
-                    )
-                    return pair
-            except Exception as e:
-                logger.warning(f"HD stream URL extraction failed: {e}")
+            for label, cmd in [("visionos-1080p", cmd_hd_visionos), ("default-1080p", cmd_hd_default)]:
+                try:
+                    pair = await asyncio.to_thread(_fetch, cmd)
+                    if pair:
+                        self._direct_url_cache[clean_url] = (pair[0], pair[1], time.time())
+                        logger.info(
+                            f"Cached TRUE HD stream via {label} ({'DASH 1080p+Audio' if pair[1] else 'Single'})"
+                        )
+                        return pair
+                except Exception as e:
+                    logger.warning(f"HD stream extraction ({label}) failed: {e}")
 
-            # Fallback: Android/Web progressive client
+            # Tertiary Fallback: Android progressive client
             cmd_fallback = [
                 str(sys.executable), "-m", "yt_dlp",
                 "-g",
                 "--no-warnings",
-                "--extractor-args", "youtube:player_client=android,web",
+                "--extractor-args", "youtube:player_client=android",
                 "-f", "best[height<=1080][ext=mp4]/best[ext=mp4]/best",
                 clean_url
             ]
