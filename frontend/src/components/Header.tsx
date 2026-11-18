@@ -1,18 +1,25 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Video, Tv, CheckCircle2 } from "lucide-react";
+import { Video, Tv } from "lucide-react";
 import { checkBackendHealth } from "../lib/api";
 
 export default function Header() {
-  const [backendStatus, setBackendStatus] = useState<{ status: string; ffmpeg_detected?: boolean }>({
-    status: "online",
-  });
+  const [status, setStatus] = useState<"checking" | "healthy" | "offline">("checking");
 
   useEffect(() => {
-    checkBackendHealth().then((res) => {
-      setBackendStatus(res);
-    });
+    let active = true;
+    const pollHealth = async () => {
+      const res = await checkBackendHealth();
+      if (!active) return;
+      setStatus(res?.status === "healthy" ? "healthy" : "offline");
+    };
+    pollHealth();
+    const timer = setInterval(pollHealth, 15000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
   return (
@@ -33,9 +40,31 @@ export default function Header() {
             <span className="font-bold">1080p Full HD</span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 font-bold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Engine Ready</span>
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-bold ${
+              status === "healthy"
+                ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-400"
+                : status === "offline"
+                ? "bg-rose-950/40 border-rose-500/30 text-rose-400"
+                : "bg-amber-950/40 border-amber-500/30 text-amber-400"
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                status === "healthy"
+                  ? "bg-emerald-400 animate-pulse"
+                  : status === "offline"
+                  ? "bg-rose-400"
+                  : "bg-amber-400 animate-ping"
+              }`}
+            />
+            <span>
+              {status === "healthy"
+                ? "Cloud Ready"
+                : status === "offline"
+                ? "Reconnecting..."
+                : "Checking..."}
+            </span>
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { JobState, ScriptSegment } from "../types/recap";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://streamrecap-studio-production.up.railway.app";
 
 export async function checkBackendHealth() {
   try {
@@ -90,4 +90,11 @@ export function getFullMediaUrl(pathOrUrl: string): string {
     return pathOrUrl;
   }
   return `${API_BASE}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+}
+
+export function getDownloadUrl(pathOrUrl: string): string {
+  if (!pathOrUrl) return "";
+  const filename = pathOrUrl.split("/").pop() || "";
+  if (!filename) return getFullMediaUrl(pathOrUrl);
+  return `${API_BASE}/api/download/${encodeURIComponent(filename)}`;
 }

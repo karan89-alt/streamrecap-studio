@@ -5,14 +5,9 @@ import {
   X,
   Mic,
   Square,
-  Play,
-  RotateCcw,
   Upload,
-  Volume2,
   CheckCircle2,
-  Radio,
   Sliders,
-  ChevronDown
 } from "lucide-react";
 import { ScriptSegment } from "../types/recap";
 import { uploadUserVoice, getFullMediaUrl } from "../lib/api";
@@ -39,14 +34,47 @@ export default function TeleprompterModal({
   const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [scrollSpeed, setScrollSpeed] = useState<number>(30); // pixels per sec
-  const [currentTime, setCurrentTime] = useState(0);
+  const [scrollSpeed, setScrollSpeed] = useState<number>(30);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const teleprompterRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const scrollIntervalRef = useRef<any>(null);
+  const scrollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scrollSpeedRef = useRef<number>(30);
+
+  useEffect(() => {
+    scrollSpeedRef.current = scrollSpeed;
+  }, [scrollSpeed]);
+
+  // Cleanup mic stream & timers on close/unmount
+  useEffect(() => {
+    if (!isOpen) {
+      cleanupResources();
+    }
+    return () => cleanupResources();
+  }, [isOpen]);
+
+  const cleanupResources = () => {
+    if (scrollIntervalRef.current) {
+      clearInterval(scrollIntervalRef.current);
+      scrollIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.pause();
+    }
+    setIsRecording(false);
+  };
 
   if (!isOpen) return null;
 
@@ -54,7 +82,18 @@ export default function TeleprompterModal({
     try {
       setUploadError(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      streamRef.current = stream;
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
+
+      const mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -65,47 +104,47 @@ export default function TeleprompterModal({
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
         setRecordedBlob(audioBlob);
         setRecordedUrl(URL.createObjectURL(audioBlob));
         stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
       };
 
       mediaRecorder.start(250);
       setIsRecording(true);
 
-      // Play video with game audio lowered to 15%
       if (videoRef.current) {
         videoRef.current.currentTime = 0;
         videoRef.current.volume = 0.15;
-        videoRef.current.play();
+        videoRef.current.play().catch(() => {});
       }
 
-      // Start teleprompter smooth scrolling
       if (teleprompterRef.current) {
         teleprompterRef.current.scrollTop = 0;
       }
+
+      if (scrollIntervalRef.current) clearInterval(scrollIntervalRef.current);
       scrollIntervalRef.current = setInterval(() => {
         if (teleprompterRef.current) {
-          teleprompterRef.current.scrollTop += scrollSpeed / 20;
+          teleprompterRef.current.scrollTop += scrollSpeedRef.current / 20;
         }
       }, 50);
     } catch (err) {
       console.error("Microphone access error:", err);
-      setUploadError("Could not access microphone. Please grant permission or upload an audio file.");
+      setUploadError("Mic permission denied. Allow mic access or upload an audio file.");
     }
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
-      setIsRecording(false);
     }
-    if (videoRef.current) {
-      videoRef.current.pause();
-    }
+    setIsRecording(false);
+    if (videoRef.current) videoRef.current.pause();
     if (scrollIntervalRef.current) {
       clearInterval(scrollIntervalRef.current);
+      scrollIntervalRef.current = null;
     }
   };
 
@@ -128,7 +167,7 @@ export default function TeleprompterModal({
         onClose();
       }
     } catch (err: any) {
-      setUploadError(err.message || "Failed to process voiceover");
+      setUploadError(err.message || "Failed to mix voiceover");
     } finally {
       setIsUploading(false);
     }
@@ -137,136 +176,116 @@ export default function TeleprompterModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
       <div className="w-full max-w-5xl bg-studio-900 border border-studio-700 rounded-3xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
-        {/* Modal Top Bar */}
-        <div className="px-6 py-4 border-b border-studio-800 flex items-center justify-between bg-studio-950/80">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-brand-accent/20 border border-brand-accent/40 flex items-center justify-center text-brand-accent">
-              <Mic className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-extrabold text-white flex items-center gap-2">
-                <span>Self-Voiceover Studio & Teleprompter</span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase font-mono">
-                  Live Mic Mode
-                </span>
-              </h2>
-              <p className="text-xs text-slate-400">
-                Read live while video plays with 15% ducked game audio. Backend applies broadcast EBU loudnorm.
-              </p>
-            </div>
+        {/* Top Bar */}
+        <div className="px-5 py-3.5 border-b border-studio-800 flex items-center justify-between bg-studio-950/80">
+          <div className="flex items-center gap-2.5">
+            <Mic className="w-4 h-4 text-[#FF4655]" />
+            <h2 className="text-sm font-extrabold text-white">Teleprompter Voiceover Studio</h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-studio-800 transition"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-studio-800 transition"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Modal Body: Split View (Video + Teleprompter) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 flex-1 overflow-y-auto">
-          {/* Left: Video Preview with 15% Game Audio Ducking (5 cols) */}
-          <div className="lg:col-span-5 flex flex-col space-y-4">
-            <div className="relative aspect-video rounded-2xl overflow-hidden bg-black border border-studio-700 shadow-xl">
+        {/* Body */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 flex-1 overflow-y-auto">
+          {/* Left: Video + Controls */}
+          <div className="lg:col-span-5 flex flex-col space-y-3">
+            <div className="relative aspect-video rounded-2xl overflow-hidden bg-black border border-studio-700">
               <video
                 ref={videoRef}
                 src={getFullMediaUrl(videoUrl)}
+                playsInline
                 className="w-full h-full object-contain"
-                onTimeUpdate={() => {
-                  if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
-                }}
               />
-              {/* Overlay Ducking Status */}
-              <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-brand-yellow/30 text-[11px] font-medium text-amber-300">
-                <Radio className="w-3.5 h-3.5 animate-pulse text-amber-400" />
-                <span>Game Audio: 15% Ducked</span>
-              </div>
             </div>
 
-            {/* Mic Recording Controls */}
             <div className="p-4 rounded-2xl bg-studio-950 border border-studio-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Mic className="w-3.5 h-3.5 text-brand-accent" />
-                  Recording Status:
-                </span>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-300">Status</span>
                 {isRecording ? (
-                  <span className="flex items-center gap-1.5 text-xs font-mono font-bold text-rose-400">
+                  <span className="flex items-center gap-1.5 font-mono font-bold text-rose-400">
                     <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-                    RECORDING LIVE...
+                    RECORDING
                   </span>
                 ) : recordedBlob ? (
-                  <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
+                  <span className="font-mono text-emerald-400 flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    Audio Captured
+                    Ready to Mix
                   </span>
                 ) : (
-                  <span className="text-xs text-slate-500">Ready to record</span>
+                  <span className="text-slate-500">Idle</span>
                 )}
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2">
                 {!isRecording ? (
                   <button
+                    type="button"
                     onClick={startRecording}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-brand-accent hover:bg-brand-accent/90 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/25 transition active:scale-95"
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-[#FF4655] hover:brightness-110 text-white font-bold text-xs flex items-center justify-center gap-2 transition"
                   >
                     <Mic className="w-4 h-4" />
-                    <span>Start Teleprompter Recording</span>
+                    <span>Start Recording</span>
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={stopRecording}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition active:scale-95"
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition"
                   >
                     <Square className="w-4 h-4 fill-current" />
-                    <span>Stop Recording</span>
+                    <span>Stop</span>
                   </button>
                 )}
 
-                {/* Upload audio file alternative */}
-                <label className="p-2.5 rounded-xl bg-studio-800 hover:bg-studio-700 text-slate-300 border border-studio-700 cursor-pointer flex items-center justify-center transition" title="Upload Audio File">
+                <label
+                  className="p-2.5 rounded-xl bg-studio-800 hover:bg-studio-700 text-slate-300 border border-studio-700 cursor-pointer flex items-center justify-center transition"
+                  title="Upload MP3 / WAV"
+                >
                   <Upload className="w-4 h-4" />
-                  <input
-                    type="file"
-                    accept="audio/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
+                  <input type="file" accept="audio/*" onChange={handleFileUpload} className="hidden" />
                 </label>
               </div>
 
-              {/* Audio Playback Preview if recorded */}
               {recordedUrl && (
-                <div className="pt-2 border-t border-studio-800">
-                  <p className="text-[11px] text-slate-400 mb-1">Your Voiceover Recording Preview:</p>
+                <div className="pt-2 border-t border-studio-800 space-y-2">
                   <audio src={recordedUrl} controls className="w-full h-8" />
+                  <button
+                    type="button"
+                    onClick={handleSaveAndMix}
+                    disabled={isUploading}
+                    className="w-full py-2 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition disabled:opacity-50"
+                  >
+                    {isUploading ? "Mixing Voiceover..." : "Mix Voiceover & Export HD"}
+                  </button>
                 </div>
               )}
 
-              {uploadError && (
-                <p className="text-xs text-rose-400 font-medium">{uploadError}</p>
-              )}
+              {uploadError && <p className="text-xs text-rose-400 font-medium">{uploadError}</p>}
             </div>
           </div>
 
-          {/* Right: Smooth Scrolling Teleprompter Window (7 cols) */}
-          <div className="lg:col-span-7 flex flex-col bg-studio-950 rounded-2xl border border-studio-800 overflow-hidden relative shadow-inner">
-            {/* Teleprompter Header & Controls */}
-            <div className="px-4 py-3 bg-studio-900 border-b border-studio-800 flex items-center justify-between">
+          {/* Right: Teleprompter Script */}
+          <div className="lg:col-span-7 flex flex-col bg-studio-950 rounded-2xl border border-studio-800 overflow-hidden max-h-[55vh] lg:max-h-[65vh]">
+            <div className="px-4 py-2.5 bg-studio-900 border-b border-studio-800 flex items-center justify-between">
               <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                <Sliders className="w-3.5 h-3.5 text-brand-cyan" />
-                Teleprompter Speed:
+                <Sliders className="w-3.5 h-3.5 text-[#FF4655]" />
+                Scroll Speed
               </span>
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex items-center gap-1.5 text-xs">
                 {[20, 30, 45, 60].map((spd) => (
                   <button
                     key={spd}
+                    type="button"
                     onClick={() => setScrollSpeed(spd)}
-                    className={`px-2.5 py-1 rounded-lg border font-mono font-bold transition ${
+                    className={`px-2 py-1 rounded-lg border font-mono font-bold transition ${
                       scrollSpeed === spd
-                        ? "bg-brand-accent text-white border-brand-accent"
+                        ? "bg-[#FF4655] text-white border-[#FF4655]"
                         : "bg-studio-800 text-slate-400 border-studio-700 hover:text-white"
                     }`}
                   >
@@ -276,67 +295,26 @@ export default function TeleprompterModal({
               </div>
             </div>
 
-            {/* Scrollable Script Area */}
             <div
               ref={teleprompterRef}
-              className="flex-1 p-6 overflow-y-auto space-y-8 scroll-smooth teleprompter-text"
+              className="flex-1 p-5 overflow-y-auto space-y-6"
             >
-              <div className="h-10" />
               {segments.map((seg, idx) => (
-                <div
-                  key={seg.id}
-                  className="space-y-2 border-b border-studio-800/60 pb-6 group hover:bg-studio-900/40 p-3 rounded-xl transition"
-                >
+                <div key={seg.id} className="space-y-1.5 border-b border-studio-800/60 pb-5">
                   <div className="flex items-center justify-between text-xs font-mono text-slate-400">
-                    <span className="text-brand-accent font-bold">
-                      Scene {idx + 1} [{seg.video_start_fmt} - {seg.video_end_fmt}]
+                    <span className="text-[#FF4655] font-bold">
+                      [{seg.video_start_fmt} - {seg.video_end_fmt}]
                     </span>
-                    <span className="text-amber-400/80 uppercase font-semibold text-[10px]">
-                      {seg.act}
-                    </span>
+                    <span className="text-amber-400/80 text-[10px]">{seg.act}</span>
                   </div>
-
-                  <p className="text-lg sm:text-xl font-bold text-slate-100 leading-relaxed font-sans group-hover:text-amber-200 transition">
+                  <p className="text-lg font-bold text-slate-100 leading-relaxed">
                     "{seg.dialogue_hindi}"
-                  </p>
-
-                  <p className="text-xs text-slate-500 italic">
-                    Visual Cue: {seg.scene_note}
                   </p>
                 </div>
               ))}
-              <div className="h-40" />
+              <div className="h-24" />
             </div>
           </div>
-        </div>
-
-        {/* Modal Footer: Save & Mix Button */}
-        <div className="px-6 py-4 bg-studio-950 border-t border-studio-800 flex items-center justify-between">
-          <p className="text-xs text-slate-400">
-            Clicking merge will duck game audio to 15% and mix your voice with loudnorm broadcast compression.
-          </p>
-
-          <button
-            onClick={handleSaveAndMix}
-            disabled={!recordedBlob || isUploading}
-            className={`px-6 py-2.5 rounded-xl font-bold text-xs tracking-wide flex items-center gap-2 transition ${
-              recordedBlob && !isUploading
-                ? "bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white shadow-lg shadow-emerald-500/20 active:scale-95"
-                : "bg-studio-800 text-slate-500 cursor-not-allowed border border-studio-700"
-            }`}
-          >
-            {isUploading ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Mixing Voiceover with Game Audio...</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Mix & Export Final Video</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
     </div>

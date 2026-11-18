@@ -2,7 +2,7 @@
 
 import React from "react";
 import { X, Download, Film, Subtitles, CheckCircle2 } from "lucide-react";
-import { getFullMediaUrl } from "../lib/api";
+import { getDownloadUrl } from "../lib/api";
 import { JobState } from "../types/recap";
 
 interface ExportModalProps {
@@ -14,9 +14,9 @@ interface ExportModalProps {
 export default function ExportModal({ isOpen, onClose, job }: ExportModalProps) {
   if (!isOpen) return null;
 
-  const finalVideoUrl = getFullMediaUrl(job.final_video_url || job.stitched_video_url || "");
-  const masterVideoUrl = getFullMediaUrl(job.stitched_video_url || "");
-  const srtUrl = getFullMediaUrl(job.srt_url || "");
+  const finalVideoUrl = getDownloadUrl(job.final_video_url || job.stitched_video_url || "");
+  const masterVideoUrl = getDownloadUrl(job.stitched_video_url || "");
+  const srtUrl = getDownloadUrl(job.srt_url || "");
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">

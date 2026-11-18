@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "StreamRecap Studio | AI Gaming Video Editor & Hindi Voiceover",
-  description: "Turn 4-6 hour long YouTube gaming streams into 15-25 minute edited Movie-Explainer videos with time-synced Hindi commentary.",
+  title: "StreamRecap Studio | Full HD Gaming Recap Editor",
+  description: "Convert long YouTube gaming streams into edited 1080p Full HD recaps with viral captions and time-synced Hindi script.",
 };
 
 export default function RootLayout({

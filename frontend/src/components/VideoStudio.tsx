@@ -8,7 +8,7 @@ import {
   Tv,
   Volume2,
   VolumeX,
-  Radio,
+  Loader2,
 } from "lucide-react";
 import { getFullMediaUrl } from "../lib/api";
 import { ScriptSegment } from "../types/recap";
@@ -29,28 +29,33 @@ export default function VideoStudio({
   videoRef,
 }: VideoStudioProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [duration, setDuration] = useState(0);
-  // Requirement: Button to on/off original audio, by default that will be OFF (muted)
+  // Default: Original Audio OFF (muted) per user requirement
   const [isOriginalAudioOn, setIsOriginalAudioOn] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const fullVideoUrl = getFullMediaUrl(videoUrl);
 
-  // Set initial muted state when video loads
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.muted = !isOriginalAudioOn;
     }
-  }, [isOriginalAudioOn, videoUrl]);
+  }, [isOriginalAudioOn, videoUrl, videoRef]);
+
+  // Reset play state when a new video URL loads
+  useEffect(() => {
+    setIsPlaying(false);
+    setDuration(0);
+  }, [fullVideoUrl]);
 
   const togglePlay = () => {
     if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-    } else {
+    if (videoRef.current.paused) {
       videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
     }
-    setIsPlaying(!isPlaying);
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -80,6 +85,7 @@ export default function VideoStudio({
   };
 
   const formatTime = (secs: number) => {
+    if (!Number.isFinite(secs) || secs < 0) return "00:00";
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
@@ -90,12 +96,16 @@ export default function VideoStudio({
       ref={containerRef}
       className="w-full bg-black rounded-2xl overflow-hidden border border-studio-800 shadow-2xl relative flex flex-col group"
     >
-      {/* Main Video Viewport */}
-      <div className="relative aspect-video w-full bg-studio-950 flex items-center justify-center overflow-hidden">
+      {/* Main Video Viewport (captions are cleanly burned into the 1080p MP4 — no double overlap!) */}
+      <div
+        onClick={togglePlay}
+        className="relative aspect-video w-full bg-studio-950 flex items-center justify-center overflow-hidden cursor-pointer"
+      >
         <video
           ref={videoRef}
           src={fullVideoUrl}
           playsInline
+          preload="metadata"
           muted={!isOriginalAudioOn}
           className="w-full h-full object-contain"
           onTimeUpdate={() => {
@@ -109,8 +119,15 @@ export default function VideoStudio({
               videoRef.current.muted = !isOriginalAudioOn;
             }
           }}
+          onWaiting={() => setIsBuffering(true)}
+          onPlaying={() => {
+            setIsBuffering(false);
+            setIsPlaying(true);
+          }}
+          onCanPlay={() => setIsBuffering(false)}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
+          onEnded={() => setIsPlaying(false)}
         />
 
         {/* Top Minimal Badges */}
@@ -127,27 +144,21 @@ export default function VideoStudio({
           )}
         </div>
 
-        {/* Viral Font Style Captions on Video */}
-        {activeSegment && (
-          <div className="absolute bottom-12 left-4 right-4 text-center pointer-events-none z-20 transition-all">
-            <div className="inline-block max-w-2xl px-4 py-2 rounded-xl bg-black/75 backdrop-blur-sm border border-white/15">
-              <p
-                className="text-base sm:text-xl md:text-2xl font-black uppercase tracking-wide text-[#FFE600] leading-snug"
-                style={{
-                  textShadow: "2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0 4px 8px rgba(0,0,0,0.8)",
-                  fontFamily: "Impact, Arial Black, sans-serif"
-                }}
-              >
-                {activeSegment.dialogue_hindi}
-              </p>
-            </div>
+        {/* Buffering Indicator */}
+        {isBuffering && (
+          <div className="absolute z-20 p-3 rounded-full bg-black/70 text-white pointer-events-none">
+            <Loader2 className="w-7 h-7 animate-spin text-[#FF4655]" />
           </div>
         )}
 
         {/* Center Play Button Overlay */}
-        {!isPlaying && (
+        {!isPlaying && !isBuffering && (
           <button
-            onClick={togglePlay}
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePlay();
+            }}
             className="absolute z-10 w-14 h-14 rounded-full bg-[#FF4655] text-white flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition"
           >
             <Play className="w-6 h-6 translate-x-0.5 fill-current" />
@@ -163,7 +174,7 @@ export default function VideoStudio({
           min={0}
           max={duration || 100}
           step={0.1}
-          value={currentTime}
+          value={Math.min(currentTime, duration || 100)}
           onChange={handleSeek}
           className="w-full h-1.5 bg-studio-800 rounded-lg appearance-none cursor-pointer accent-[#FF4655]"
         />
@@ -172,6 +183,7 @@ export default function VideoStudio({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={togglePlay}
               className="w-8 h-8 rounded-lg bg-studio-800 hover:bg-studio-700 text-white flex items-center justify-center transition"
             >
@@ -184,8 +196,9 @@ export default function VideoStudio({
           </div>
 
           <div className="flex items-center gap-2.5">
-            {/* Requirement: Button to on/off original audio, by default that will be OFF */}
+            {/* Dedicated Original Audio Toggle (Default: OFF) */}
             <button
+              type="button"
               onClick={toggleOriginalAudio}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${
                 isOriginalAudioOn
@@ -207,7 +220,11 @@ export default function VideoStudio({
             </button>
 
             {/* Fullscreen */}
-            <button onClick={toggleFullscreen} className="text-slate-400 hover:text-white p-1">
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="text-slate-400 hover:text-white p-1"
+            >
               <Maximize2 className="w-4 h-4" />
             </button>
           </div>
