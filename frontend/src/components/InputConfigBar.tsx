@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { Youtube, Sparkles, Clock, ArrowRight, Wand2 } from "lucide-react";
+import { Youtube, Sparkles, Clock, ArrowRight, Wand2, Mic } from "lucide-react";
 
 interface InputConfigBarProps {
-  onGenerate: (url: string, targetMinutes: number, storyStyle: string) => void;
+  onGenerate: (url: string, targetMinutes: number, storyStyle: string, voiceSpeaker: string) => void;
   isProcessing: boolean;
 }
 
@@ -28,17 +28,46 @@ const STYLES = [
   "Explainer Storytelling",
 ];
 
+const MALE_VOICES = [
+  { id: "shubh", label: "Shubh (Energetic)" },
+  { id: "kabir", label: "Kabir (Deep Cinematic)" },
+  { id: "aditya", label: "Aditya (Storyteller)" },
+  { id: "rahul", label: "Rahul (Funny / Roast)" },
+  { id: "rohan", label: "Rohan (Fast Action)" },
+  { id: "amit", label: "Amit (Documentary)" },
+  { id: "dev", label: "Dev (Suspense)" },
+  { id: "mohit", label: "Mohit (Gaming)" },
+];
+
+const FEMALE_VOICES = [
+  { id: "ritu", label: "Ritu (Expressive)" },
+  { id: "priya", label: "Priya (Storyteller)" },
+  { id: "neha", label: "Neha (Energetic)" },
+  { id: "kavya", label: "Kavya (Dramatic)" },
+  { id: "shreya", label: "Shreya (Explainer)" },
+  { id: "shruti", label: "Shruti (Documentary)" },
+];
+
 const REAL_DEMO_URL = "https://www.youtube.com/watch?v=RbVGCHFf0ZY";
 
 export default function InputConfigBar({ onGenerate, isProcessing }: InputConfigBarProps) {
   const [url, setUrl] = useState(REAL_DEMO_URL);
-  const [targetMinutes, setTargetMinutes] = useState(15);
-  const [storyStyle, setStoryStyle] = useState("Explainer Storytelling");
+  const [targetMinutes, setTargetMinutes] = useState(5);
+  const [storyStyle, setStoryStyle] = useState("Funny + Facts");
+  const [voiceGender, setVoiceGender] = useState<"male" | "female">("male");
+  const [voiceSpeaker, setVoiceSpeaker] = useState("shubh");
+
+  const activeVoices = voiceGender === "male" ? MALE_VOICES : FEMALE_VOICES;
+
+  const handleGenderChange = (g: "male" | "female") => {
+    setVoiceGender(g);
+    setVoiceSpeaker(g === "male" ? MALE_VOICES[0].id : FEMALE_VOICES[0].id);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
-    onGenerate(url.trim(), targetMinutes, storyStyle);
+    onGenerate(url.trim(), targetMinutes, storyStyle, voiceSpeaker);
   };
 
   return (
@@ -49,7 +78,7 @@ export default function InputConfigBar({ onGenerate, isProcessing }: InputConfig
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <Youtube className="w-4 h-4 text-[#FF4655]" />
-              YouTube Gaming Stream / VOD URL
+              YouTube Stream / VOD URL
             </label>
             <button
               type="button"
@@ -63,17 +92,17 @@ export default function InputConfigBar({ onGenerate, isProcessing }: InputConfig
             type="text"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="Paste YouTube stream or past live stream URL..."
+            placeholder="Paste YouTube stream or VOD URL..."
             className="w-full h-11 bg-studio-950 border border-studio-700 focus:border-[#FF4655] rounded-xl px-4 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition"
             disabled={isProcessing}
           />
         </div>
 
-        {/* 1. Video Duration Selection */}
+        {/* 1. Video Duration */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-brand-yellow" />
-            1. Select Video Duration
+            <Clock className="w-3.5 h-3.5 text-amber-400" />
+            1. Video Duration
           </label>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {LENGTHS.map((item) => {
@@ -97,11 +126,11 @@ export default function InputConfigBar({ onGenerate, isProcessing }: InputConfig
           </div>
         </div>
 
-        {/* 2. Storytelling Style Selection */}
+        {/* 2. Storytelling Style */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-[#FF4655]" />
-            2. Select Storytelling Style
+            2. Storytelling Style
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {STYLES.map((style) => {
@@ -125,30 +154,77 @@ export default function InputConfigBar({ onGenerate, isProcessing }: InputConfig
           </div>
         </div>
 
-        {/* CTA Button */}
-        <div className="pt-2">
-          <button
-            type="submit"
-            disabled={isProcessing}
-            className={`w-full py-3 px-6 rounded-xl font-bold text-sm tracking-wide flex items-center justify-center gap-2 transition ${
-              isProcessing
-                ? "bg-studio-800 text-slate-500 cursor-not-allowed"
-                : "bg-gradient-to-r from-[#FF4655] to-[#FF2D55] hover:brightness-110 text-white shadow-lg shadow-[#FF4655]/25 active:scale-95"
-            }`}
-          >
-            {isProcessing ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                <span>Processing Full HD Recap Video...</span>
-              </>
-            ) : (
-              <>
-                <Wand2 className="w-4 h-4" />
-                <span>Generate Full HD Recap Video</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
+        {/* 3. Sarvam AI Indian Voice + Generate CTA */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1 items-end">
+          <div className="lg:col-span-7 space-y-2">
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Mic className="w-3.5 h-3.5 text-purple-400" />
+              3. Sarvam AI Indian Voice
+            </label>
+            <div className="grid grid-cols-12 gap-2">
+              <button
+                type="button"
+                onClick={() => handleGenderChange("male")}
+                disabled={isProcessing}
+                className={`col-span-3 py-2.5 px-2 rounded-xl border text-xs font-bold transition ${
+                  voiceGender === "male"
+                    ? "bg-purple-600 text-white border-purple-500"
+                    : "bg-studio-950 border-studio-800 text-slate-300 hover:border-studio-700"
+                }`}
+              >
+                Male
+              </button>
+              <button
+                type="button"
+                onClick={() => handleGenderChange("female")}
+                disabled={isProcessing}
+                className={`col-span-3 py-2.5 px-2 rounded-xl border text-xs font-bold transition ${
+                  voiceGender === "female"
+                    ? "bg-purple-600 text-white border-purple-500"
+                    : "bg-studio-950 border-studio-800 text-slate-300 hover:border-studio-700"
+                }`}
+              >
+                Female
+              </button>
+              <select
+                value={voiceSpeaker}
+                onChange={(e) => setVoiceSpeaker(e.target.value)}
+                disabled={isProcessing}
+                className="col-span-6 h-10 bg-studio-950 border border-studio-700 focus:border-purple-500 rounded-xl px-3 text-xs font-bold text-slate-100 focus:outline-none"
+              >
+                {activeVoices.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="lg:col-span-5">
+            <button
+              type="submit"
+              disabled={isProcessing}
+              className={`w-full h-10 px-6 rounded-xl font-bold text-sm tracking-wide flex items-center justify-center gap-2 transition ${
+                isProcessing
+                  ? "bg-studio-800 text-slate-500 cursor-not-allowed"
+                  : "bg-gradient-to-r from-[#FF4655] to-[#FF2D55] hover:brightness-110 text-white shadow-lg shadow-[#FF4655]/25 active:scale-95"
+              }`}
+            >
+              {isProcessing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  <span>Processing 1080p...</span>
+                </>
+              ) : (
+                <>
+                  <Wand2 className="w-4 h-4" />
+                  <span>Generate Full HD Video</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </form>
     </div>

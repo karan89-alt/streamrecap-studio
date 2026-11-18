@@ -42,14 +42,15 @@ export default function HomePage() {
   const handleStartRecap = async (
     url: string,
     targetMinutes: number,
-    storyStyle: string
+    storyStyle: string,
+    voiceSpeaker: string
   ) => {
     stopTracking();
     setIsProcessing(true);
     setCurrentTime(0);
 
     try {
-      const res = await startRecap(url, targetMinutes, storyStyle);
+      const res = await startRecap(url, targetMinutes, storyStyle, voiceSpeaker);
       const newJobId = res.job_id;
 
       setJob({
@@ -57,10 +58,11 @@ export default function HomePage() {
         url,
         target_minutes: targetMinutes,
         story_style: storyStyle,
+        voice_speaker: voiceSpeaker,
         status: "PROCESSING",
         stage: 1,
         progress: 8,
-        message: "Analyzing stream & writing script...",
+        message: "Analyzing stream & preparing Sarvam AI voice...",
       });
 
       // Real-time SSE updates
@@ -159,7 +161,14 @@ export default function HomePage() {
             </div>
             <button
               type="button"
-              onClick={() => handleStartRecap(job.url, job.target_minutes, job.story_style)}
+              onClick={() =>
+                handleStartRecap(
+                  job.url,
+                  job.target_minutes,
+                  job.story_style,
+                  job.voice_speaker || "shubh"
+                )
+              }
               className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shrink-0"
             >
               Retry
@@ -179,7 +188,7 @@ export default function HomePage() {
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
                   <span className="text-xs font-bold text-white uppercase tracking-wider">
-                    {job.story_style} • {job.target_minutes} Min • 1080p Full HD
+                    {job.story_style} • {job.target_minutes} Min • Sarvam AI ({job.voice_speaker || "Shubh"})
                   </span>
                 </div>
 
@@ -209,6 +218,7 @@ export default function HomePage() {
                 <div className="lg:col-span-7">
                   <VideoStudio
                     videoUrl={job.final_video_url || job.stitched_video_url || ""}
+                    gameAudioUrl={job.game_audio_video_url}
                     activeSegment={activeSegment}
                     currentTime={currentTime}
                     onTimeUpdate={setCurrentTime}

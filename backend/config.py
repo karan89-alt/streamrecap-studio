@@ -47,6 +47,7 @@ def find_executable(name: str) -> str:
 class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
+    SARVAM_API_KEY: Optional[str] = None
     ELEVENLABS_API_KEY: Optional[str] = None
     ELEVENLABS_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"  # Default expressive voice
     HOST: str = "127.0.0.1"

@@ -1,6 +1,7 @@
 import { JobState, ScriptSegment } from "../types/recap";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://streamrecap-studio-production.up.railway.app";
+const SARVAM_KEY = process.env.NEXT_PUBLIC_SARVAM_API_KEY || "";
 
 export async function checkBackendHealth() {
   try {
@@ -14,12 +15,18 @@ export async function checkBackendHealth() {
 export async function startRecap(
   url: string,
   target_minutes: number,
-  story_style: string
+  story_style: string,
+  voice_speaker: string = "shubh"
 ) {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (SARVAM_KEY) {
+    headers["X-Sarvam-Key"] = SARVAM_KEY;
+  }
+
   const res = await fetch(`${API_BASE}/api/recap/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, target_minutes, story_style }),
+    headers,
+    body: JSON.stringify({ url, target_minutes, story_style, voice_speaker }),
   });
   if (!res.ok) {
     const err = await res.json();

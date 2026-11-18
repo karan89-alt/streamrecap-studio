@@ -15,6 +15,7 @@ import { ScriptSegment } from "../types/recap";
 
 interface VideoStudioProps {
   videoUrl: string;
+  gameAudioUrl?: string;
   activeSegment?: ScriptSegment;
   currentTime: number;
   onTimeUpdate: (time: number) => void;
@@ -23,6 +24,7 @@ interface VideoStudioProps {
 
 export default function VideoStudio({
   videoUrl,
+  gameAudioUrl,
   activeSegment,
   currentTime,
   onTimeUpdate,
@@ -31,30 +33,45 @@ export default function VideoStudio({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [duration, setDuration] = useState(0);
-  // Default: Original Audio OFF (muted) per user requirement
+  // Original Game Audio toggle: OFF by default (Sarvam AI Indian voice explains the whole video)
   const [isOriginalAudioOn, setIsOriginalAudioOn] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
+  const gameAudioRef = useRef<HTMLAudioElement>(null);
 
   const fullVideoUrl = getFullMediaUrl(videoUrl);
+  const fullGameAudioUrl = gameAudioUrl ? getFullMediaUrl(gameAudioUrl) : "";
 
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = !isOriginalAudioOn;
-    }
-  }, [isOriginalAudioOn, videoUrl, videoRef]);
-
-  // Reset play state when a new video URL loads
   useEffect(() => {
     setIsPlaying(false);
     setDuration(0);
+    setIsOriginalAudioOn(false);
   }, [fullVideoUrl]);
 
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play().catch(() => {});
+  // Keep optional original game audio in exact lockstep with the main video
+  useEffect(() => {
+    const ga = gameAudioRef.current;
+    const vid = videoRef.current;
+    if (!ga || !vid || !fullGameAudioUrl) return;
+
+    ga.volume = 0.18; // Ducked background game SFX under Sarvam AI narration
+    if (isOriginalAudioOn && isPlaying) {
+      if (Math.abs(ga.currentTime - vid.currentTime) > 0.25) {
+        ga.currentTime = vid.currentTime;
+      }
+      ga.play().catch(() => {});
     } else {
-      videoRef.current.pause();
+      ga.pause();
+    }
+  }, [isOriginalAudioOn, isPlaying, fullGameAudioUrl, videoRef]);
+
+  const togglePlay = () => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (vid.paused) {
+      vid.play().catch(() => {});
+    } else {
+      vid.pause();
     }
   };
 
@@ -64,14 +81,22 @@ export default function VideoStudio({
       videoRef.current.currentTime = time;
       onTimeUpdate(time);
     }
+    if (gameAudioRef.current) {
+      gameAudioRef.current.currentTime = time;
+    }
   };
 
   const toggleOriginalAudio = () => {
     const nextState = !isOriginalAudioOn;
     setIsOriginalAudioOn(nextState);
-    if (videoRef.current) {
-      videoRef.current.muted = !nextState;
-      videoRef.current.volume = 1.0;
+    if (gameAudioRef.current && videoRef.current && fullGameAudioUrl) {
+      if (nextState && !videoRef.current.paused) {
+        gameAudioRef.current.currentTime = videoRef.current.currentTime;
+        gameAudioRef.current.volume = 0.18;
+        gameAudioRef.current.play().catch(() => {});
+      } else {
+        gameAudioRef.current.pause();
+      }
     }
   };
 
@@ -96,7 +121,10 @@ export default function VideoStudio({
       ref={containerRef}
       className="w-full bg-black rounded-2xl overflow-hidden border border-studio-800 shadow-2xl relative flex flex-col group"
     >
-      {/* Main Video Viewport (captions are cleanly burned into the 1080p MP4 — no double overlap!) */}
+      {/* Synced Original Game Audio Track (controlled by toggle button; OFF by default) */}
+      {fullGameAudioUrl && <audio ref={gameAudioRef} src={fullGameAudioUrl} preload="auto" />}
+
+      {/* Main Video Viewport (Single clean burned-in viral captions — ZERO double overlay) */}
       <div
         onClick={togglePlay}
         className="relative aspect-video w-full bg-studio-950 flex items-center justify-center overflow-hidden cursor-pointer"
@@ -106,28 +134,43 @@ export default function VideoStudio({
           src={fullVideoUrl}
           playsInline
           preload="metadata"
-          muted={!isOriginalAudioOn}
           className="w-full h-full object-contain"
           onTimeUpdate={() => {
             if (videoRef.current) {
-              onTimeUpdate(videoRef.current.currentTime);
+              const t = videoRef.current.currentTime;
+              onTimeUpdate(t);
+              if (
+                isOriginalAudioOn &&
+                gameAudioRef.current &&
+                Math.abs(gameAudioRef.current.currentTime - t) > 0.4
+              ) {
+                gameAudioRef.current.currentTime = t;
+              }
             }
           }}
           onLoadedMetadata={() => {
             if (videoRef.current) {
               setDuration(videoRef.current.duration);
-              videoRef.current.muted = !isOriginalAudioOn;
             }
           }}
-          onWaiting={() => setIsBuffering(true)}
+          onWaiting={() => {
+            setIsBuffering(true);
+            gameAudioRef.current?.pause();
+          }}
           onPlaying={() => {
             setIsBuffering(false);
             setIsPlaying(true);
           }}
           onCanPlay={() => setIsBuffering(false)}
           onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onEnded={() => setIsPlaying(false)}
+          onPause={() => {
+            setIsPlaying(false);
+            gameAudioRef.current?.pause();
+          }}
+          onEnded={() => {
+            setIsPlaying(false);
+            gameAudioRef.current?.pause();
+          }}
         />
 
         {/* Top Minimal Badges */}
@@ -196,7 +239,7 @@ export default function VideoStudio({
           </div>
 
           <div className="flex items-center gap-2.5">
-            {/* Dedicated Original Audio Toggle (Default: OFF) */}
+            {/* Dedicated Original Audio Toggle (OFF by default — Sarvam AI speaks by default) */}
             <button
               type="button"
               onClick={toggleOriginalAudio}
