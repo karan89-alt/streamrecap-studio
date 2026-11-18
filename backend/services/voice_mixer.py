@@ -49,7 +49,7 @@ class VoiceMixer:
         out_video_path = EXPORTS_DIR / output_filename
 
         safe_ass_path = str(Path(ass_subtitles_path).resolve()).replace("\\", "/").replace(":", "\\:")
-        base_vf = "crop=trunc(iw*0.94/2)*2:trunc(ih*0.94/2)*2,scale=1920:1080,setsar=1"
+        base_vf = "crop=trunc(iw*0.94/2)*2:trunc(ih*0.94/2)*2,scale=1920:1080:flags=lanczos,fps=30,setsar=1"
         vf_with_ass = f"{base_vf},ass='{safe_ass_path}'"
 
         def _is_valid(path: Path) -> bool:
@@ -67,12 +67,12 @@ class VoiceMixer:
                 "-c:v", "libx264",
                 "-preset", "ultrafast",
                 "-tune", "zerolatency",
-                "-b:v", "2800k",
-                "-maxrate", "3500k",
-                "-bufsize", "5000k",
+                "-crf", "19",
+                "-maxrate", "6500k",
+                "-bufsize", "12000k",
                 "-pix_fmt", "yuv420p",
                 "-c:a", "aac",
-                "-b:a", "128k",
+                "-b:a", "192k",
                 "-ar", "44100",
                 "-movflags", "+faststart",
                 str(out_video_path)
